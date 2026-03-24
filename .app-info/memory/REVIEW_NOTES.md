@@ -1,0 +1,14 @@
+# REVIEW_NOTES
+
+## TEMPLATE
+
+```markdown
+## FINDING - [id] - [timestamp]
+SEVERITY: MUST_FIX | SHOULD_FIX | NICE_TO_HAVE
+FILE: [...]
+ISSUE: [...]
+RECOMMENDED_CHANGE: [...]
+STATUS: OPEN | RESOLVED
+```
+
+## LIVE_LOG
