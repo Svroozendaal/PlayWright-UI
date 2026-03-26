@@ -55,6 +55,34 @@ Run engine PoC parallel aan Explorer Phase 3.
 
 ---
 
+## 3a. Architectuurlagen
+
+### A. Electron Main Process
+App lifecycle, filesystem, subprocess management, watchers, SQLite, keychain, IPC handlers.
+
+### B. Renderer Process
+React UI: schermen, forms, explorer, run status, settings, artifact views.
+
+### C. Domain Services (in Main Process)
+- `ProjectRegistryService`
+- `ProjectHealthService`
+- `PlaywrightConfigService`  ← eigenaar van configSummary cache
+- `ProjectTemplateService`
+- `FileWatchService`
+- `ProjectIndexService`
+- `RunService`
+- `ArtifactService`
+- `EnvironmentService`
+- `SecretsService`
+- `RecorderService`
+
+Aanmaken en initialiseren: zie sectie 4a (`ServiceContainer`).
+
+### D. Playwright Workspace Layer
+De echte projectmappen op schijf. Playwright blijft source of truth voor execution.
+
+---
+
 ## 4. IPC Architectuur
 
 ### Twee soorten communicatie
@@ -216,7 +244,23 @@ const migrations: Migration[] = [
   },
 ]
 
+export function openDatabase(): Database {
+  const dbPath = path.join(app.getPath('userData'), 'pw-studio.db')
+  const db = new Database(dbPath)
+  db.pragma('journal_mode = WAL')
+  // STAP 1: schema_version tabel altijd eerst aanmaken — vóór elke query erop
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_version (
+    version    INTEGER NOT NULL,
+    applied_at TEXT NOT NULL
+  )`)
+  // STAP 2: pas daarna migrations uitvoeren
+  runMigrations(db)
+  return db
+}
+
 export function runMigrations(db: Database): void {
+  // MAX(version) op lege tabel geeft NULL → ?? 0 vangt dit correct op
+  // maar schema_version MOET al bestaan voor deze query — zie openDatabase()
   const current = db
     .prepare('SELECT MAX(version) as v FROM schema_version')
     .get() as { v: number | null }
@@ -330,105 +374,173 @@ export function getPlaywrightVersion(rootPath: string): string {
 
 ## 8. Dynamisch `testDir` Lezen uit Playwright Config
 
-De app leest `testDir` dynamisch uit `playwright.config.ts` van elk project. De hardcoded aanname `tests/` wordt nergens gebruikt — `testDir` is altijd de geresolvede waarde uit de config.
+De app leest `testDir` dynamisch uit `playwright.config.ts` van elk project.
+De hardcoded aanname `tests/` wordt nergens gebruikt — `testDir` is altijd de geresolvede waarde uit de config.
 
-### Leesaanpak
+### Leesaanpak — gelaagde strategie
 
-Playwright config-bestanden zijn TypeScript en kunnen niet met een simpele JSON-parser worden gelezen. De aanpak in v1:
+Playwright config-bestanden zijn TypeScript. System Node kan `.ts` niet direct uitvoeren.
+De aanpak gebruikt vier methoden in volgorde — de eerste die slaagt wint.
 
 ```typescript
 // src/main/utils/playwrightConfigReader.ts
 import path from 'path'
+import fs from 'fs'
 import { execFileSync } from 'child_process'
+import { getPlaywrightBinary } from './playwrightBinary'
 
 export type PlaywrightConfigSummary = {
-  testDir: string           // absoluut pad
-  projects: string[]        // lijst van project-namen (browser configs)
-  outputDir: string         // absoluut pad, default: test-results/
+  testDir:    string    // absoluut pad
+  projects:   string[]  // namen van Playwright-projecten (browser configs)
+  outputDir:  string    // absoluut pad, default: test-results/
+  readMethod: 'playwright-list' | 'tsx' | 'js-config' | 'fallback'
 }
 
 export function readPlaywrightConfig(rootPath: string): PlaywrightConfigSummary {
-  // Gebruik een klein Node-script dat de config importeert en de relevante
-  // velden als JSON naar stdout schrijft. Dit draait in de projectomgeving
-  // zodat eventuele imports in de config gewoon werken.
-  const extractorScript = buildExtractorScript()
-  const output = execFileSync(
-    process.execPath,   // system Node (niet Electron's bundeled Node)
-    ['--input-type=module'],
-    {
-      input: extractorScript,
-      cwd: rootPath,
-      encoding: 'utf8',
-      env: { ...process.env, PWSTUDIO_EXTRACT: '1' },
-    }
-  )
-  return JSON.parse(output)
-}
-
-function buildExtractorScript(): string {
-  // Importeer de config dynamisch en extraheer de benodigde velden
-  return `
-import { pathToFileURL } from 'url';
-import path from 'path';
-
-const configFiles = ['playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs'];
-let config = null;
-for (const f of configFiles) {
-  try {
-    const mod = await import(pathToFileURL(path.resolve(f)).href);
-    config = mod.default ?? mod;
-    break;
-  } catch {}
-}
-
-const testDir = path.resolve(config?.testDir ?? 'tests');
-const outputDir = path.resolve(config?.outputDir ?? 'test-results');
-const projects = (config?.projects ?? []).map(p => p.name).filter(Boolean);
-
-process.stdout.write(JSON.stringify({ testDir, projects, outputDir }));
-`
+  const methods = [
+    () => readViaPlaywrightList(rootPath),  // Meest betrouwbaar
+    () => readViaTsx(rootPath),             // Als tsx in project aanwezig
+    () => readViaJsConfig(rootPath),        // Als .js config naast .ts bestaat
+  ]
+  for (const method of methods) {
+    try { return method() } catch {}
+  }
+  return fallback(rootPath)
 }
 ```
 
-**Fallback:** Als de config niet leesbaar is (parse-fout, ontbrekend bestand):
-- `testDir` → `path.join(rootPath, 'tests')` als fallback
-- Toon een warning in het Health Panel: "Kon playwright.config.ts niet lezen — testDir valt terug op 'tests/'"
-- De app blijft functioneel
+**Methode 1 — `playwright --list-projects` (voorkeur)**
+
+Playwright 1.40+ geeft via `--list-projects` gestructureerde output inclusief `testDir` en `outputDir`.
+
+```typescript
+function readViaPlaywrightList(rootPath: string): PlaywrightConfigSummary {
+  const output = execFileSync(
+    getPlaywrightBinary(rootPath),
+    ['--list-projects', '--reporter=json'],
+    { cwd: rootPath, encoding: 'utf8', timeout: 10_000 }
+  )
+  const data = JSON.parse(output)
+  return {
+    testDir:    path.resolve(rootPath, data.config?.testDir   ?? 'tests'),
+    outputDir:  path.resolve(rootPath, data.config?.outputDir ?? 'test-results'),
+    projects:   (data.projects ?? []).map((p: { name: string }) => p.name).filter(Boolean),
+    readMethod: 'playwright-list',
+  }
+}
+```
+
+**Methode 2 — `tsx` (als aanwezig in het project)**
+
+Veel Playwright-projecten hebben `tsx` of `ts-node` als devDependency.
+
+```typescript
+function readViaTsx(rootPath: string): PlaywrightConfigSummary {
+  const isWindows = process.platform === 'win32'
+  const tsx = path.join(rootPath, 'node_modules', '.bin', isWindows ? 'tsx.cmd' : 'tsx')
+  if (!fs.existsSync(tsx)) throw new Error('tsx not found')
+
+  // Schrijf tijdelijk extractor script
+  const scriptPath = path.join(rootPath, '.pwstudio-extractor-tmp.mts')
+  fs.writeFileSync(scriptPath, `
+import path from 'path';
+const c = (await import('./playwright.config.ts'))?.default ?? {};
+process.stdout.write(JSON.stringify({
+  testDir:   path.resolve(c.testDir   ?? 'tests'),
+  outputDir: path.resolve(c.outputDir ?? 'test-results'),
+  projects:  (c.projects ?? []).map((p: any) => p.name).filter(Boolean),
+}));
+`, 'utf8')
+
+  try {
+    const output = execFileSync(tsx, [scriptPath], {
+      cwd: rootPath, encoding: 'utf8', timeout: 10_000,
+    })
+    return { ...JSON.parse(output), readMethod: 'tsx' }
+  } finally {
+    fs.unlinkSync(scriptPath)  // Altijd opruimen, ook bij fout
+  }
+}
+```
+
+**Methode 3 — `.js` config**
+
+Sommige projecten compileren hun config naar `.js`, of hebben een `.js` versie naast de `.ts`.
+
+```typescript
+function readViaJsConfig(rootPath: string): PlaywrightConfigSummary {
+  const jsPath = path.join(rootPath, 'playwright.config.js')
+  if (!fs.existsSync(jsPath)) throw new Error('No .js config')
+  // require() werkt alleen voor CommonJS; ESM .js configs zullen hier falen → valt terug op methode 4
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const config = require(jsPath)?.default ?? require(jsPath)
+  return {
+    testDir:    path.resolve(rootPath, config?.testDir   ?? 'tests'),
+    outputDir:  path.resolve(rootPath, config?.outputDir ?? 'test-results'),
+    projects:   (config?.projects ?? []).map((p: { name: string }) => p.name).filter(Boolean),
+    readMethod: 'js-config',
+  }
+}
+```
+
+**Methode 4 — Fallback**
+
+```typescript
+function fallback(rootPath: string): PlaywrightConfigSummary {
+  return {
+    testDir:    path.join(rootPath, 'tests'),
+    outputDir:  path.join(rootPath, 'test-results'),
+    projects:   [],
+    readMethod: 'fallback',
+  }
+}
+```
+
+**Fallback gedrag:**
+- Health Panel toont: "Config kon niet worden gelezen — gebruikt fallback testDir 'tests/'"
+- `configReadable` health check = `warning` (niet `error`) — app blijft functioneel
+- `readMethod` wordt opgeslagen in de health snapshot voor debugging
+- `projects = []` → run dialog toont handmatig invoerveld in plaats van dropdown
 
 ### Waar `testDir` wordt gebruikt
 
 | Component | Gebruik |
 |---|---|
-| `ProjectHealthService` | Health check `testsFolder` controleert `configSummary.testDir` i.p.v. hardcoded `tests/` |
-| `FileWatchService` | Watch target is `configSummary.testDir` i.p.v. `tests/` |
+| `ProjectHealthService` | `testDir` check gebruikt `configSummary.testDir` |
+| `FileWatchService` | Watch target is `configSummary.testDir` |
 | `ProjectIndexService` | Explorer root start bij `configSummary.testDir` |
-| `RecorderService` | Directory picker voor output beperkt tot `configSummary.testDir` |
-| `CommandBuilder` | `--output` voor artifacts gaat naar `configSummary.outputDir` |
+| `RecorderService` | Directory picker beperkt tot `configSummary.testDir` |
+| `CommandBuilder` | `--output` gebruikt `configSummary.outputDir` |
 
 ### `configSummary` cachen
 
-`readPlaywrightConfig()` is relatief zwaar (spawnt een Node-process). Cache de uitkomst in memory per project. Invalideert als `playwright.config.*` wijzigt (FileWatchService meldt dit al).
+`readPlaywrightConfig()` spawnt een proces — cache per project, invalideert bij `playwright.config.*` wijziging.
 
 ```typescript
-// ProjectHealthService of aparte PlaywrightConfigService
-private configCache = new Map<string, { summary: PlaywrightConfigSummary; cachedAt: number }>()
+// src/main/services/PlaywrightConfigService.ts
+export class PlaywrightConfigService {
+  private cache = new Map<string, { summary: PlaywrightConfigSummary; cachedAt: number }>()
 
-getConfigSummary(projectId: string, rootPath: string): PlaywrightConfigSummary {
-  const cached = this.configCache.get(projectId)
-  if (cached && Date.now() - cached.cachedAt < 60_000) return cached.summary
-  const summary = readPlaywrightConfig(rootPath)
-  this.configCache.set(projectId, { summary, cachedAt: Date.now() })
-  return summary
-}
+  get(projectId: string, rootPath: string): PlaywrightConfigSummary {
+    const hit = this.cache.get(projectId)
+    if (hit && Date.now() - hit.cachedAt < 60_000) return hit.summary
+    const summary = readPlaywrightConfig(rootPath)
+    this.cache.set(projectId, { summary, cachedAt: Date.now() })
+    return summary
+  }
 
-invalidateConfigCache(projectId: string): void {
-  this.configCache.delete(projectId)
+  invalidate(projectId: string): void {
+    this.cache.delete(projectId)
+  }
 }
 ```
 
-`projects[]` uit de config is de lijst van Playwright-projectnamen (browser-configuraties). Dit wordt gebruikt voor de browser-dropdown in de run dialog.
+`PlaywrightConfigService` is een eigen service — niet ingebakken in `ProjectHealthService`.
+Dit is de eigenaar van de `configSummary` cache. Alle andere services vragen hem op via dependency injection (zie sectie 4a).
+
 
 ---
+
 
 ## 9. Playwright JSON Reporter Output & Parser
 
@@ -649,8 +761,22 @@ type FileWatchEvent = {
 }
 ```
 
-**Watch targets:** `configSummary.testDir`, `pages/`, `fixtures/`, `environments/`, project root
-*(testDir wordt dynamisch gelezen via PlaywrightConfigService — zie sectie 8)*
+**Watch targets:**
+```typescript
+function getWatchTargets(rootPath: string, testDir: string): string[] {
+  const candidates = [
+    testDir,                                        // dynamisch uit config
+    path.join(rootPath, 'environments'),            // altijd relevant
+    path.join(rootPath, 'pages'),                   // optioneel
+    path.join(rootPath, 'fixtures'),                // optioneel
+    path.join(rootPath, 'playwright.config.ts'),
+    path.join(rootPath, 'playwright.config.js'),
+  ]
+  // Watch alleen paden die daadwerkelijk bestaan — voorkomt chokidar warnings
+  return candidates.filter(p => fs.existsSync(p))
+}
+```
+
 **Ignored:** `node_modules/`, `test-results/`, `playwright-report/`, `.git/`, `.artifacts/`
 
 **Speciale triggers:**
@@ -720,6 +846,34 @@ type RunRequest = {
 - `'{"mode":"single","projectName":"chromium"}'`
 - `'{"mode":"all"}'`
 
+**Run afsluiting — exit code interpretatie:**
+
+Playwright geeft altijd exit code `1` bij zowel test-failures als configuratiefouten.
+Om het onderscheid te maken gebruikt de app de volgende logica na process `close`:
+
+```typescript
+type RunOutcome = 'passed' | 'failed' | 'config-error' | 'cancelled'
+
+function determineOutcome(exitCode: number, resultsPath: string): RunOutcome {
+  if (exitCode === 0) return 'passed'
+  // Controleer of results.json bestaat en parsebaar is
+  try {
+    const report = JSON.parse(fs.readFileSync(resultsPath, 'utf8'))
+    // Als Playwright resultaten kon schrijven = tests gedraaid maar gefaald
+    if (report?.suites !== undefined) return 'failed'
+  } catch {}
+  // results.json ontbreekt of onparseerbaar = Playwright startte niet goed
+  return 'config-error'
+}
+```
+
+`config-error` wordt opgeslagen als aparte status in `runs.status`:
+```typescript
+status: 'queued' | 'running' | 'passed' | 'failed' | 'config-error' | 'cancelled'
+```
+
+UI-verschil: `failed` toont "X tests mislukt", `config-error` toont "Playwright kon niet starten — zie logs" met een prominente link naar de log tab.
+
 Run directory per run: `<rootPath>/.artifacts/runs/<run-id>/`
 Inhoud: `log.txt`, `results.json`, `report/`, `traces/`, `screenshots/`, `videos/`
 
@@ -742,6 +896,35 @@ Inhoud: `log.txt`, `results.json`, `report/`, `traces/`, `screenshots/`, `videos
 3. Merge met overrides (overrides winnen altijd)
 4. Geeft terug: `{ baseURL: string, env: Record<string, string> }`
 
+**baseURL doorgeven aan Playwright — correct mechanisme:**
+
+Playwright leest `baseURL` uit de config, niet automatisch uit een env var.
+De juiste aanpak: geef `BASE_URL` mee als omgevingsvariabele en lees die in `playwright.config.ts`:
+
+```typescript
+// playwright.config.ts (in het gebruikersproject — niet door ons gegenereerd)
+export default defineConfig({
+  use: {
+    baseURL: process.env.BASE_URL ?? 'http://localhost:3000',
+  }
+})
+```
+
+PW Studio injecteert `BASE_URL` als env var bij de run:
+```typescript
+// In resolveForRun — baseURL wordt omgezet naar env var
+const env: Record<string, string> = {
+  ...variables,
+  ...resolvedSecrets,
+  BASE_URL: baseURL,            // ← standaard conv; werkt als project config dit leest
+  ...overrides?.env,            // ← overrides winnen
+}
+```
+
+**Belangrijk:** Dit werkt alleen als het gebruikersproject `process.env.BASE_URL` leest in de config.
+Bij import van een bestaand project: toon een hint in de Health Panel als `baseURL` in de config hardcoded lijkt (d.w.z. als `process.env` niet voorkomt in `playwright.config.ts`).
+Bij nieuwe projecten via de wizard: genereer de config altijd met `process.env.BASE_URL ?? 'http://localhost:3000'`.
+
 ---
 
 ### SecretsService
@@ -762,7 +945,20 @@ Na `recorder:save` → FileWatchService detecteert nieuwe file → Explorer refr
 
 ### ArtifactService
 
-Na elke run: scan run directory, koppel artifacts aan `run_test_results`, sla `reportPath` op.
+**Artifact-paden komen uit de JSON reporter — geen bestandsnaam-matching nodig.**
+
+`RunResultParser` leest artifact-paden direct uit `attachments[]` in `results.json` en slaat ze al op in `run_test_results.tracePath / screenshotPath / videoPath`. De `ArtifactService` hoeft ze niet opnieuw te indexeren via bestandsnamen.
+
+`collectArtifactsForRun` doet daarom alleen:
+1. Controleer of `report/index.html` bestaat → sla op als `runs.reportPath`
+2. Controleer of `log.txt` bestaat → sla op als `runs.logPath`
+3. Controleer of `results.json` bestaat → sla op als `runs.resultsPath`
+4. Bepaal `runs.status` via `determineOutcome(exitCode, resultsPath)` (zie RunService sectie)
+
+Methoden:
+- `collectArtifactsForRun(runId, runDir, exitCode)` — aangeroepen door RunService na process close
+- `openArtifact(filePath)` → `shell.openPath(filePath)`
+- `openReport(runId)` → `shell.openExternal('file://' + reportPath)`
 
 **"Open in editor"** in Explorer: `shell.openPath(filePath)` → OS-geregistreerde editor voor `.ts`.
 
@@ -776,7 +972,10 @@ type ProjectRow = {
   id: string; name: string; rootPath: string
   source: 'created' | 'imported'
   createdAt: string; updatedAt: string; lastOpenedAt?: string
-  defaultBrowser?: string; activeEnvironment?: string
+  activeEnvironment?: string
+  // defaultBrowser verwijderd: vervangen door BrowserSelection in RunRequest
+  // De browser-dropdown in de run dialog gebruikt configSummary.projects als opties
+  // en slaat de keuze op als browserJson in de runs tabel
 }
 ```
 
@@ -799,7 +998,7 @@ type ProjectHealthSnapshotRow = {
 type RunRow = {
   id: string; projectId: string
   parentRunId?: string
-  status: 'queued' | 'running' | 'passed' | 'failed' | 'cancelled'
+  status: 'queued' | 'running' | 'passed' | 'failed' | 'config-error' | 'cancelled'
   startedAt: string; finishedAt?: string
   targetType: 'all' | 'folder' | 'file' | 'test'
   targetPath?: string; testTitleFilter?: string
@@ -845,7 +1044,7 @@ pw-studio/
 ├── src/
 │   ├── main/
 │   │   ├── ipc/
-│   │   ├── services/          ← alle 10 services
+│   │   ├── services/          ← alle 11 services (incl. PlaywrightConfigService)
 │   │   ├── db/                ← migrations.ts, schema.ts
 │   │   └── utils/             ← playwrightBinary.ts
 │   ├── preload/
@@ -883,8 +1082,7 @@ webshop-tests/
 │       ├── screenshots/
 │       └── videos/
 └── .pwstudio/
-    ├── project.json
-    └── presets.json
+    └── project.json         ← bevat ook presets (geen apart presets.json)
 ```
 
 ---
@@ -987,4 +1185,99 @@ PW Studio v1 is klaar wanneer een gebruiker:
 ## Eerste milestone
 
 > *"Open imported Playwright project, pass health checks, show live explorer that refreshes on file changes — en draai één test file met de lokale Playwright binary, zie exit code en log."*
+
+
+---
+
+## 4a. Service-initialisatie en Dependency Injection
+
+Alle services leven in de Electron main process. Ze worden eenmalig aangemaakt bij app-start in `src/main/index.ts` en doorgegeven aan de IPC-handlers via een centrale `ServiceContainer`.
+
+### ServiceContainer
+
+```typescript
+// src/main/services/ServiceContainer.ts
+export type ServiceContainer = {
+  db:                    Database
+  registry:              ProjectRegistryService
+  health:                ProjectHealthService
+  playwrightConfig:      PlaywrightConfigService
+  template:              ProjectTemplateService
+  watcher:               FileWatchService
+  index:                 ProjectIndexService
+  runs:                  RunService
+  artifacts:             ArtifactService
+  environments:          EnvironmentService
+  secrets:               SecretsService
+  recorder:              RecorderService
+}
+
+export function createServices(db: Database, window: BrowserWindow): ServiceContainer {
+  // Leaf services — geen afhankelijkheden
+  const secrets           = new SecretsService()
+  const playwrightConfig  = new PlaywrightConfigService()
+  const registry          = new ProjectRegistryService(db)
+
+  // Services die alleen db of leaf services nodig hebben
+  const health            = new ProjectHealthService(db, playwrightConfig)
+  const environments      = new EnvironmentService(secrets)
+  const template          = new ProjectTemplateService(playwrightConfig)
+  const artifacts         = new ArtifactService(db)
+
+  // Services die de webContents-callback nodig hebben
+  const send = (channel: string, data: unknown) => window.webContents.send(channel, data)
+
+  const index   = new ProjectIndexService(playwrightConfig)
+  const watcher = new FileWatchService({ health, environments, index, playwrightConfig, send })
+  const runs    = new RunService(db, environments, artifacts, playwrightConfig, send)
+  const recorder = new RecorderService(playwrightConfig, send)
+
+  return { db, registry, health, playwrightConfig, template, watcher, index,
+           runs, artifacts, environments, secrets, recorder }
+}
+```
+
+### Initialisatievolgorde in `main/index.ts`
+
+```typescript
+// src/main/index.ts
+app.whenReady().then(() => {
+  // 1. SQLite — altijd als eerste
+  const db = openDatabase()   // maakt schema_version aan + runMigrations()
+
+  // 2. BrowserWindow aanmaken
+  const win = createWindow()
+
+  // 3. Services aanmaken (window nodig voor webContents.send)
+  const services = createServices(db, win)
+
+  // 4. IPC handlers registreren
+  registerAllHandlers(services)
+
+  // 5. App is klaar
+})
+```
+
+### webContents — één instantie, één venster
+
+In v1 is er altijd precies één `BrowserWindow`. De `send`-callback in `ServiceContainer` is gebonden aan die instantie bij app-start. Services bewaren de `send`-functie, niet een referentie naar `BrowserWindow` of `webContents` direct.
+
+**Voordeel:** Als het venster herlaadt (`win.webContents.reload()`), blijft de `send`-referentie geldig — `webContents` is hetzelfde object, alleen de renderer-inhoud vernieuwt.
+
+```typescript
+// Patroon in elke service die push-events stuurt:
+class RunService {
+  constructor(
+    private db: Database,
+    private environments: EnvironmentService,
+    private artifacts: ArtifactService,
+    private playwrightConfig: PlaywrightConfigService,
+    private send: (channel: string, data: unknown) => void  // ← geen BrowserWindow referentie
+  ) {}
+
+  private pushLogEvent(event: LogEvent): void {
+    this.send(IPC.RUNS_LOG_EVENT, event)
+  }
+}
+```
 

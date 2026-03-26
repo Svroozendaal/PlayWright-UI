@@ -1,0 +1,6 @@
+{
+  "name": "local",
+  "baseURL": "https://playwright.dev",
+  "variables": {},
+  "secretRefs": {}
+}

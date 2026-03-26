@@ -1,0 +1,11 @@
+{
+  "name": "pw-studio-sample",
+  "version": "1.0.0",
+  "description": "Sample Playwright project for PW Studio",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0"
+  }
+}
