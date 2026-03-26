@@ -2,3 +2,5 @@
 /pw-studio/node_modules/
 /pw-studio/out/
 /pw-studio/.tmp-*.log
+/pw-studio/dist/*
+!/pw-studio/dist/PW Studio 0.1.0.exe
