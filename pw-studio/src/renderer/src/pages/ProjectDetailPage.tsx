@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { IPC, ERROR_CODES } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RegisteredProject } from '../../../shared/types/ipc'
+import { api } from '../api/client'
 import { HealthPanel } from '../components/HealthPanel'
 import { ErrorBanner } from '../components/ErrorBanner'
 
@@ -16,7 +17,7 @@ export function ProjectDetailPage(): JSX.Element {
     if (!id) return
 
     const loadProject = async (): Promise<void> => {
-      const result = await window.api.invoke<RegisteredProject>(IPC.PROJECTS_OPEN, { id })
+      const result = await api.invoke<RegisteredProject>(IPC.PROJECTS_OPEN, { id })
       const envelope = result as IpcEnvelope<RegisteredProject>
 
       if (envelope.error) {
@@ -30,12 +31,12 @@ export function ProjectDetailPage(): JSX.Element {
       }
     }
 
-    loadProject()
+    void loadProject()
   }, [id])
 
   const handleRemoveProject = async (): Promise<void> => {
     if (!id) return
-    await window.api.invoke(IPC.PROJECTS_REMOVE, { id })
+    await api.invoke(IPC.PROJECTS_REMOVE, { id })
     navigate('/')
   }
 

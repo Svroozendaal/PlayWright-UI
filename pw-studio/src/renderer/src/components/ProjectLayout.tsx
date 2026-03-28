@@ -2,6 +2,8 @@ import { useState, useEffect, createContext, useContext } from 'react'
 import { Outlet, useParams, useNavigate } from 'react-router-dom'
 import { IPC, ERROR_CODES } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RegisteredProject, HealthSnapshot } from '../../../shared/types/ipc'
+import { api } from '../api/client'
+import { useSocketEvent } from '../api/useSocket'
 import { Sidebar } from './Sidebar'
 import { ErrorBanner } from './ErrorBanner'
 
@@ -32,7 +34,7 @@ export function ProjectLayout(): JSX.Element {
     if (!id) return
 
     const loadProject = async (): Promise<void> => {
-      const result = await window.api.invoke<RegisteredProject>(IPC.PROJECTS_OPEN, { id })
+      const result = await api.invoke<RegisteredProject>(IPC.PROJECTS_OPEN, { id })
       const envelope = result as IpcEnvelope<RegisteredProject>
 
       if (envelope.error) {
@@ -46,7 +48,7 @@ export function ProjectLayout(): JSX.Element {
       }
     }
 
-    loadProject()
+    void loadProject()
   }, [id])
 
   // Load health on project load
@@ -54,7 +56,7 @@ export function ProjectLayout(): JSX.Element {
     if (!project) return
 
     const loadHealth = async (): Promise<void> => {
-      const result = await window.api.invoke<HealthSnapshot>(IPC.HEALTH_GET, {
+      const result = await api.invoke<HealthSnapshot>(IPC.HEALTH_GET, {
         projectId: project.id,
       })
       const envelope = result as IpcEnvelope<HealthSnapshot>
@@ -63,7 +65,7 @@ export function ProjectLayout(): JSX.Element {
       }
     }
 
-    loadHealth()
+    void loadHealth()
   }, [project])
 
   // Track active run
@@ -71,26 +73,41 @@ export function ProjectLayout(): JSX.Element {
     if (!id) return
 
     const checkActive = async (): Promise<void> => {
-      const result = await window.api.invoke<{ runId: string } | null>(IPC.RUNS_GET_ACTIVE, { projectId: id })
-      const envelope = result as IpcEnvelope<{ runId: string } | null>
+      const result = await api.invoke<string | null>(IPC.RUNS_GET_ACTIVE, { projectId: id })
+      const envelope = result as IpcEnvelope<string | null>
       setHasActiveRun(!!envelope.payload)
     }
 
-    checkActive()
-
-    const handler = (): void => {
-      checkActive()
-    }
-
-    window.api.on(IPC.RUNS_STATUS_CHANGED, handler)
-    return () => {
-      window.api.off(IPC.RUNS_STATUS_CHANGED, handler)
-    }
+    void checkActive()
   }, [id])
+
+  useSocketEvent(IPC.RUNS_STATUS_CHANGED, () => {
+    if (!id) {
+      return
+    }
+
+    void api.invoke<string | null>(IPC.RUNS_GET_ACTIVE, { projectId: id }).then((result) => {
+      const envelope = result as IpcEnvelope<string | null>
+      setHasActiveRun(!!envelope.payload)
+    })
+  })
+
+  useSocketEvent<{ projectId: string }>(IPC.HEALTH_REFRESH, (event) => {
+    if (!project || event.projectId !== project.id) {
+      return
+    }
+
+    void api.invoke<HealthSnapshot>(IPC.HEALTH_GET, { projectId: project.id }).then((result) => {
+      const envelope = result as IpcEnvelope<HealthSnapshot>
+      if (envelope.payload) {
+        setHealth(envelope.payload)
+      }
+    })
+  })
 
   const refreshHealth = async (): Promise<void> => {
     if (!project) return
-    const result = await window.api.invoke<HealthSnapshot>(IPC.HEALTH_REFRESH, {
+    const result = await api.invoke<HealthSnapshot>(IPC.HEALTH_REFRESH, {
       projectId: project.id,
     })
     const envelope = result as IpcEnvelope<HealthSnapshot>
@@ -101,7 +118,7 @@ export function ProjectLayout(): JSX.Element {
 
   const handleRemoveProject = async (): Promise<void> => {
     if (!id) return
-    await window.api.invoke(IPC.PROJECTS_REMOVE, { id })
+    await api.invoke(IPC.PROJECTS_REMOVE, { id })
     navigate('/')
   }
 

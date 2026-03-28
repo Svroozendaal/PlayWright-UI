@@ -2,16 +2,19 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RegisteredProject } from '../../../shared/types/ipc'
+import { api } from '../api/client'
 import { CreateProjectWizard } from '../components/CreateProjectWizard'
+import { FolderPicker } from '../components/FolderPicker'
 
 export function ProjectsPage(): JSX.Element {
   const navigate = useNavigate()
   const [projects, setProjects] = useState<RegisteredProject[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showImportPicker, setShowImportPicker] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const loadProjects = useCallback(async () => {
-    const result = await window.api.invoke<RegisteredProject[]>(IPC.PROJECTS_LIST)
+    const result = await api.invoke<RegisteredProject[]>(IPC.PROJECTS_LIST)
     const envelope = result as IpcEnvelope<RegisteredProject[]>
     if (envelope.payload) {
       setProjects(envelope.payload)
@@ -22,16 +25,10 @@ export function ProjectsPage(): JSX.Element {
     loadProjects()
   }, [loadProjects])
 
-  const handleImport = async (): Promise<void> => {
+  const handleImport = async (rootPath: string): Promise<void> => {
     setError(null)
-    const dirResult = await window.api.invoke<string | null>(IPC.DIALOG_OPEN_DIRECTORY)
-    const dirEnvelope = dirResult as IpcEnvelope<string | null>
-
-    if (!dirEnvelope.payload) return
-
-    const result = await window.api.invoke<RegisteredProject>(IPC.PROJECTS_IMPORT, {
-      rootPath: dirEnvelope.payload,
-    })
+    setShowImportPicker(false)
+    const result = await api.invoke<RegisteredProject>(IPC.PROJECTS_IMPORT, { rootPath })
     const envelope = result as IpcEnvelope<RegisteredProject>
 
     if (envelope.error) {
@@ -44,7 +41,7 @@ export function ProjectsPage(): JSX.Element {
 
   const handleRemove = async (e: React.MouseEvent, id: string): Promise<void> => {
     e.stopPropagation()
-    await window.api.invoke(IPC.PROJECTS_REMOVE, { id })
+    await api.invoke(IPC.PROJECTS_REMOVE, { id })
     await loadProjects()
   }
 
@@ -66,7 +63,7 @@ export function ProjectsPage(): JSX.Element {
           <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
             New Project
           </button>
-          <button className="btn btn-secondary" onClick={handleImport}>
+          <button className="btn btn-secondary" onClick={() => setShowImportPicker(true)}>
             Import Project
           </button>
         </div>
@@ -111,6 +108,14 @@ export function ProjectsPage(): JSX.Element {
               setShowCreateModal(false)
               loadProjects()
             }}
+          />
+        )}
+
+        {showImportPicker && (
+          <FolderPicker
+            title="Import Project Folder"
+            onClose={() => setShowImportPicker(false)}
+            onSelect={(selectedPath) => void handleImport(selectedPath)}
           />
         )}
       </div>

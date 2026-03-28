@@ -8,9 +8,9 @@
 ## Conventions
 
 - All code in TypeScript (strict mode).
-- Main process code in `src/main/`.
+- Server code in `src/server/`.
 - Renderer code in `src/renderer/`.
 - Shared types in `src/shared/`.
-- Preload script in `src/preload/`.
-- IPC uses the envelope pattern (`IpcEnvelope<T>`).
+- API uses the envelope pattern (`ApiEnvelope<T>`) over HTTP and WebSocket.
 - SQLite migrations are sequential and append-only.
+- `npm run dev` starts the local server and Vite dev server together.

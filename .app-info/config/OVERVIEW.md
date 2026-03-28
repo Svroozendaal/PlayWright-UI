@@ -4,47 +4,58 @@
 
 | Layer | Technology |
 |---|---|
-| Desktop shell | Electron |
+| Local server | Express + TypeScript |
 | UI | React + TypeScript |
-| Backend/services | Node.js + TypeScript (main process) |
-| Database | SQLite (better-sqlite3) |
+| Realtime push | WebSocket (`ws`) |
+| Database | SQLite (`better-sqlite3`) |
 | File watching | chokidar |
-| Secrets | keytar (OS keychain) |
+| Secrets | `keytar` (OS keychain) |
 | Automation | Local Playwright binary |
-| Packaging | electron-builder |
+| Packaging | `npm` + bundled Node runtime |
 
 ## System Requirements
 
-- **Node.js:** minimum 18.x
+- **Node.js:** minimum 20.x
 - **Playwright:** minimum 1.40.0
-- **Platform:** Windows (v1)
+- **Platform:** Windows, macOS, and Linux for local development and local use
 
 ## Project Structure
 
-```
+```text
 pw-studio/
 ├── src/
-│   ├── main/           ← Electron main process
-│   │   ├── ipc/        ← IPC handlers
-│   │   ├── services/   ← All 10 services
-│   │   ├── db/         ← migrations.ts, schema.ts
-│   │   └── utils/      ← playwrightBinary.ts, playwrightConfigReader.ts
-│   ├── preload/
-│   │   └── index.ts    ← contextBridge
+│   ├── server/
+│   │   ├── routes/         ← Express route modules
+│   │   ├── services/       ← Business logic services
+│   │   ├── db/             ← database.ts, migrations.ts
+│   │   ├── middleware/     ← envelope and validation helpers
+│   │   ├── plugins/        ← plugin loader
+│   │   ├── ws.ts           ← WebSocket server
+│   │   └── index.ts        ← Express entry point
 │   ├── renderer/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── hooks/
-│   │   └── store/
+│   │   ├── public/         ← PWA manifest and static assets
+│   │   └── src/
+│   │       ├── api/        ← fetch client and socket hook
+│   │       ├── components/
+│   │       ├── pages/
+│   │       └── main.tsx
 │   └── shared/
-│       ├── types/      ← ipc.ts, domain types
-│       └── constants/
-├── resources/
-│   └── icon.ico
+│       └── types/          ← shared transport + domain types
+├── vite.config.ts
+├── tsconfig.server.json
+├── tsconfig.web.json
 ├── package.json
-└── electron-builder.yml
+└── sample-project/
 ```
+
+## Runtime Rules
+
+- The API and WebSocket server bind to `127.0.0.1`.
+- Vite proxies `/api` and `/ws` to the local server in development.
+- Production serves the built SPA from the same local server.
+- No native-module rebuild postinstall step is required.
 
 ## Environment Variables
 
-- `PWSTUDIO_EXTRACT: '1'` — used during config extraction to identify extraction context.
+- `PORT` — optional local server port override
+- `PWSTUDIO_EXTRACT=1` — used during config extraction to identify extraction context

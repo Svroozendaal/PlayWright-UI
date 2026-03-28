@@ -5,23 +5,23 @@
 ## App-Specific Conventions
 
 ### Renderer Architecture
-- All UI code in `src/renderer/src/`.
+- All UI code lives in `src/renderer/src/`.
 - React with TypeScript — no `any`.
-- `HashRouter` from `react-router-dom` (Electron-compatible).
-- Access main process ONLY via `window.api.invoke()` / `window.api.on()` / `window.api.off()`.
+- `BrowserRouter` from `react-router-dom`.
+- Access the backend only via the fetch client in `src/renderer/src/api/client.ts` and WebSocket helpers in `src/renderer/src/api/useSocket.ts`.
 
-### IPC in Components
-- Always clean up push event listeners: `off()` in useEffect cleanup.
-- Type responses using `IpcEnvelope<T>`.
-- Handle both `payload` and `error` from every invoke response.
+### API in Components
+- Handle both `payload` and `error` from every API call.
+- Use `useSocketEvent()` for push updates and rely on hook cleanup.
+- Keep route paths and event names in shared constants.
 
 ### Component Patterns
 - Pages in `src/renderer/src/pages/`.
 - Reusable components in `src/renderer/src/components/`.
-- Custom hooks in `src/renderer/src/hooks/`.
-- State management in `src/renderer/src/store/`.
+- API helpers in `src/renderer/src/api/`.
+- State kept local unless a shared store is clearly needed.
 
-### Screens (from blueprint section 15)
+### Screens
 | Screen | Route | Phase |
 |---|---|---|
 | Projects | `/` | 1 |
@@ -33,7 +33,7 @@
 | Settings | `/settings` | 1 (basic), 6 (environments) |
 
 ### UI Principles
-- Graceful degradation — parse errors don't break the explorer.
-- Health errors disable run buttons but show "Force run" escape.
+- Graceful degradation — parse errors do not break the explorer.
+- Health errors disable run buttons but show a "Force run" escape.
 - Live refresh on push events — no full page reload.
-- Scroll-to-bottom for log streaming (unless user scrolled up).
+- Scroll to bottom for log streaming unless the user has scrolled up.

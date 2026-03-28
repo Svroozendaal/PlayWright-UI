@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, ExplorerNode, RunRequest, FileReadResult, TestStatusMap } from '../../../shared/types/ipc'
+import { api } from '../api/client'
+import { useSocketEvent } from '../api/useSocket'
 import { ArtifactPolicyEditor } from '../components/ArtifactPolicyEditor'
+import { CodeEditor } from '../components/CodeEditor'
 import { RunDialog } from '../components/RunDialog'
 
 type ContextMenuState = { x: number; y: number; node: ExplorerNode } | null
@@ -82,7 +85,7 @@ export function ExplorerPage(): JSX.Element {
 
   const fetchTree = useCallback(async () => {
     if (!projectId) return
-    const result = await window.api.invoke<ExplorerNode[]>(IPC.EXPLORER_GET_TREE, { projectId })
+    const result = await api.invoke<ExplorerNode[]>(IPC.EXPLORER_GET_TREE, { projectId })
     const envelope = result as IpcEnvelope<ExplorerNode[]>
     if (envelope.payload) setTree(envelope.payload)
     setLoading(false)
@@ -90,24 +93,23 @@ export function ExplorerPage(): JSX.Element {
 
   const fetchLastResults = useCallback(async () => {
     if (!projectId) return
-    const result = await window.api.invoke<TestStatusMap>(IPC.EXPLORER_GET_LAST_RESULTS, { projectId })
+    const result = await api.invoke<TestStatusMap>(IPC.EXPLORER_GET_LAST_RESULTS, { projectId })
     const envelope = result as IpcEnvelope<TestStatusMap>
     if (envelope.payload) setLastResults(envelope.payload)
   }, [projectId])
 
-  useEffect(() => { fetchTree(); fetchLastResults() }, [fetchTree, fetchLastResults])
-
   useEffect(() => {
-    const handler = (): void => { fetchTree() }
-    window.api.on(IPC.EXPLORER_REFRESH, handler)
-    return () => { window.api.off(IPC.EXPLORER_REFRESH, handler) }
-  }, [fetchTree])
+    void fetchTree()
+    void fetchLastResults()
+  }, [fetchTree, fetchLastResults])
 
-  useEffect(() => {
-    const handler = (): void => { fetchLastResults() }
-    window.api.on(IPC.RUNS_STATUS_CHANGED, handler)
-    return () => { window.api.off(IPC.RUNS_STATUS_CHANGED, handler) }
-  }, [fetchLastResults])
+  useSocketEvent(IPC.EXPLORER_REFRESH, () => {
+    void fetchTree()
+  })
+
+  useSocketEvent(IPC.RUNS_STATUS_CHANGED, () => {
+    void fetchLastResults()
+  })
 
   // Close context menu on outside click
   useEffect(() => {
@@ -163,7 +165,7 @@ export function ExplorerPage(): JSX.Element {
     }
 
     const loadFile = async (): Promise<void> => {
-      const result = await window.api.invoke<FileReadResult>(IPC.FILE_READ, {
+      const result = await api.invoke<FileReadResult>(IPC.FILE_READ, {
         projectId,
         filePath: selectedNode.path,
       })
@@ -181,7 +183,7 @@ export function ExplorerPage(): JSX.Element {
 
   const handleSaveFile = async (): Promise<void> => {
     if (!selectedNode || !projectId || editContent === null) return
-    await window.api.invoke(IPC.FILE_WRITE, {
+    await api.invoke(IPC.FILE_WRITE, {
       projectId,
       filePath: selectedNode.path,
       content: editContent,
@@ -200,7 +202,7 @@ export function ExplorerPage(): JSX.Element {
       headed: false,
       streamLogs: true,
     }
-    const result = await window.api.invoke<string>(IPC.RUNS_START, request)
+    const result = await api.invoke<string>(IPC.RUNS_START, request)
     const envelope = result as IpcEnvelope<string>
     if (envelope.payload) navigate(`/project/${projectId}/runs/${envelope.payload}`)
   }
@@ -212,7 +214,7 @@ export function ExplorerPage(): JSX.Element {
       : newName
 
     const filePath = `${creatingIn.parentPath}/${name}`
-    await window.api.invoke(IPC.FILE_CREATE, {
+    await api.invoke(IPC.FILE_CREATE, {
       projectId,
       filePath,
       content: creatingIn.type === 'file' ? NEW_TEST_TEMPLATE : '',
@@ -221,7 +223,7 @@ export function ExplorerPage(): JSX.Element {
     setCreatingIn(null)
     setNewName('')
     // Refresh tree
-    await window.api.invoke(IPC.EXPLORER_REFRESH, { projectId })
+    await api.invoke(IPC.EXPLORER_REFRESH, { projectId })
     await fetchTree()
   }
 
@@ -241,7 +243,7 @@ export function ExplorerPage(): JSX.Element {
   const handleRefresh = async (): Promise<void> => {
     if (!projectId) return
     setLoading(true)
-    await window.api.invoke(IPC.EXPLORER_REFRESH, { projectId })
+    await api.invoke(IPC.EXPLORER_REFRESH, { projectId })
     await fetchTree()
     await fetchLastResults()
     setLoading(false)
@@ -415,18 +417,16 @@ export function ExplorerPage(): JSX.Element {
                   <div className="code-area">
                     {fileContent === null ? (
                       <div className="code-loading">Loading file...</div>
-                    ) : isEditing ? (
-                      <textarea
-                        className="code-editor"
-                        value={editContent ?? ''}
-                        onChange={(e) => {
-                          setEditContent(e.target.value)
-                          setIsDirty(e.target.value !== fileContent)
-                        }}
-                        spellCheck={false}
-                      />
                     ) : (
-                      <pre className="code-viewer"><code>{fileContent}</code></pre>
+                      <CodeEditor
+                        value={editContent ?? fileContent}
+                        onChange={(v) => {
+                          setEditContent(v)
+                          setIsDirty(v !== fileContent)
+                        }}
+                        readOnly={!isEditing}
+                        height="100%"
+                      />
                     )}
                   </div>
                 )}

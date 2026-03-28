@@ -4,10 +4,10 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| Electron shell + React renderer | planned | |
+| Express server + React SPA | planned | |
 | SQLite + migrations system | planned | |
-| Preload / contextBridge / IPC envelope | planned | |
-| IPC channel constants | planned | |
+| REST API + WebSocket + API client | planned | |
+| API route constants | planned | |
 | Project registry (create/import/list) | planned | |
 | Basic app settings | planned | |
 
@@ -30,7 +30,7 @@
 | ProjectIndexService (full rebuild) | planned | |
 | File tree UI | planned | |
 | Test file detection | planned | |
-| Regex testcase extraction | planned | |
+| Regex test case extraction | planned | |
 | Parse warnings | planned | |
 
 ## Phase 4 — Run Engine
@@ -41,7 +41,7 @@
 | CLI command builder | planned | |
 | Single active run (spawn) | planned | |
 | Log streaming | planned | |
-| Cancel flow (SIGTERM → SIGKILL) | planned | |
+| Cancel flow (task kill / SIGTERM to SIGKILL) | planned | |
 | Run history | planned | |
 | Run detail basics | planned | |
 
@@ -51,7 +51,7 @@
 |---|---|---|
 | ArtifactService | planned | |
 | File artifact policies (migration 3) | planned | |
-| Artifact policy → CLI flags mapping | planned | |
+| Artifact policy to CLI flags mapping | planned | |
 | Rerun failed tests | planned | |
 | Run detail artifacts tab | planned | |
 
@@ -60,7 +60,7 @@
 | Feature | Status | Notes |
 |---|---|---|
 | EnvironmentService + watcher invalidation | planned | |
-| SecretsService (keytar) | planned | |
+| SecretsService (`keytar`) | planned | |
 | Temporary run overrides | planned | |
 | RecorderService (codegen) | planned | |
 
@@ -68,9 +68,11 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| Windows .exe (electron-builder) | planned | |
+| `npm` package + bundled local runtime | planned | |
 | Path audit (no hardcoded paths) | planned | |
-| IpcEnvelope.error per service | planned | |
+| `ApiEnvelope.error` per service | planned | |
 | SQLite location in Settings | planned | |
 | Documentation | planned | |
 | Sample project | planned | |
+| Plugin system | planned | |
+| REST API for AI/MCP integration | planned | |

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RunComparison, ComparedTest } from '../../../shared/types/ipc'
+import { api } from '../api/client'
 
 type CategoryFilter = 'all' | ComparedTest['category']
 
@@ -25,8 +26,6 @@ const CATEGORY_COLORS: Record<string, string> = {
 }
 
 export function RunComparisonPage(): JSX.Element {
-  const { id: projectId } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const runIdA = searchParams.get('a') ?? ''
   const runIdB = searchParams.get('b') ?? ''
@@ -40,7 +39,7 @@ export function RunComparisonPage(): JSX.Element {
       return
     }
     const fetch = async (): Promise<void> => {
-      const result = await window.api.invoke<RunComparison>(IPC.RUNS_COMPARE, { runIdA, runIdB })
+      const result = await api.invoke<RunComparison>(IPC.RUNS_COMPARE, { runIdA, runIdB })
       const envelope = result as IpcEnvelope<RunComparison>
       if (envelope.error) {
         setError(envelope.error.message)
@@ -48,7 +47,7 @@ export function RunComparisonPage(): JSX.Element {
         setComparison(envelope.payload)
       }
     }
-    fetch()
+    void fetch()
   }, [runIdA, runIdB])
 
   const filtered = comparison

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope } from '../../../shared/types/ipc'
+import { api } from '../api/client'
 
 type PolicyMode = 'off' | 'on-failure' | 'always'
 
@@ -34,7 +35,7 @@ export function ArtifactPolicyEditor({
   const [hasCustomPolicy, setHasCustomPolicy] = useState(false)
 
   const fetchPolicy = useCallback(async () => {
-    const result = await window.api.invoke<FilePolicy | null>(IPC.EXPLORER_GET_FILE_POLICY, {
+    const result = await api.invoke<FilePolicy | null>(IPC.EXPLORER_GET_FILE_POLICY, {
       projectId,
       filePath,
     })
@@ -52,7 +53,7 @@ export function ArtifactPolicyEditor({
   }, [projectId, filePath])
 
   useEffect(() => {
-    fetchPolicy()
+    void fetchPolicy()
   }, [fetchPolicy])
 
   const handleChange = async (field: keyof PolicyState, value: PolicyMode): Promise<void> => {
@@ -60,7 +61,7 @@ export function ArtifactPolicyEditor({
     setPolicy(newPolicy)
     setHasCustomPolicy(true)
 
-    await window.api.invoke(IPC.EXPLORER_SET_FILE_POLICY, {
+    await api.invoke(IPC.EXPLORER_SET_FILE_POLICY, {
       projectId,
       filePath,
       policy: newPolicy,
@@ -69,7 +70,7 @@ export function ArtifactPolicyEditor({
 
   const handleReset = async (): Promise<void> => {
     // Delete the file-specific policy
-    await window.api.invoke(IPC.EXPLORER_SET_FILE_POLICY, {
+    await api.invoke(IPC.EXPLORER_SET_FILE_POLICY, {
       projectId,
       filePath: '__delete__' + filePath,
       policy: { screenshotMode: 'on-failure', traceMode: 'on-failure', videoMode: 'off' },

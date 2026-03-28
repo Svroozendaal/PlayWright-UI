@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, HealthSnapshot, HealthItem } from '../../../shared/types/ipc'
+import { api } from '../api/client'
+import { useSocketEvent } from '../api/useSocket'
 import { WarningBanner } from './ErrorBanner'
 
 function statusIcon(status: HealthItem['status']): string {
@@ -31,7 +33,7 @@ export function HealthPanel({ projectId }: { projectId: string }): JSX.Element {
   const [error, setError] = useState<string | null>(null)
 
   const loadHealth = useCallback(async () => {
-    const result = await window.api.invoke<HealthSnapshot | null>(IPC.HEALTH_GET, {
+    const result = await api.invoke<HealthSnapshot | null>(IPC.HEALTH_GET, {
       projectId,
     })
     const envelope = result as IpcEnvelope<HealthSnapshot | null>
@@ -43,7 +45,7 @@ export function HealthPanel({ projectId }: { projectId: string }): JSX.Element {
   const handleRefresh = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const result = await window.api.invoke<HealthSnapshot>(IPC.HEALTH_REFRESH, {
+    const result = await api.invoke<HealthSnapshot>(IPC.HEALTH_REFRESH, {
       projectId,
     })
     const envelope = result as IpcEnvelope<HealthSnapshot>
@@ -59,9 +61,9 @@ export function HealthPanel({ projectId }: { projectId: string }): JSX.Element {
   }, [projectId])
 
   useEffect(() => {
-    loadHealth().then(() => {
+    void loadHealth().then(() => {
       setTimeout(async () => {
-        const result = await window.api.invoke<HealthSnapshot | null>(IPC.HEALTH_GET, {
+        const result = await api.invoke<HealthSnapshot | null>(IPC.HEALTH_GET, {
           projectId,
         })
         const envelope = result as IpcEnvelope<HealthSnapshot | null>
@@ -71,6 +73,12 @@ export function HealthPanel({ projectId }: { projectId: string }): JSX.Element {
       }, 0)
     })
   }, [projectId, loadHealth, handleRefresh])
+
+  useSocketEvent<{ projectId: string }>(IPC.HEALTH_REFRESH, (event) => {
+    if (event.projectId === projectId) {
+      void loadHealth()
+    }
+  })
 
   const hasErrors = snapshot?.items.some((i) => i.status === 'error') ?? false
   const configNotReadable = snapshot?.items.find(

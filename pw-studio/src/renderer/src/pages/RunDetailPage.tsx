@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RunRecord, TestResultRecord, LogEvent } from '../../../shared/types/ipc'
+import { api } from '../api/client'
+import { useSocketEvent } from '../api/useSocket'
 
 type Tab = 'summary' | 'logs' | 'tests' | 'artifacts' | 'metadata'
 
@@ -29,7 +31,7 @@ export function RunDetailPage(): JSX.Element {
 
   const fetchRun = useCallback(async () => {
     if (!runId) return
-    const result = await window.api.invoke<RunRecord>(IPC.RUNS_GET_BY_ID, { runId })
+    const result = await api.invoke<RunRecord>(IPC.RUNS_GET_BY_ID, { runId })
     const envelope = result as IpcEnvelope<RunRecord>
     if (envelope.payload) {
       setRun(envelope.payload)
@@ -39,51 +41,50 @@ export function RunDetailPage(): JSX.Element {
 
   const fetchTestResults = useCallback(async () => {
     if (!runId) return
-    const result = await window.api.invoke<TestResultRecord[]>(IPC.RUNS_GET_TEST_RESULTS, { runId })
+    const result = await api.invoke<TestResultRecord[]>(IPC.RUNS_GET_TEST_RESULTS, { runId })
     const envelope = result as IpcEnvelope<TestResultRecord[]>
     if (envelope.payload) setTestResults(envelope.payload)
   }, [runId])
 
-  useEffect(() => { fetchRun(); fetchTestResults() }, [fetchRun, fetchTestResults])
-
   useEffect(() => {
-    const handler = (...args: unknown[]): void => {
-      const event = args[0] as LogEvent
-      if (event.runId === runId) setLogs((prev) => [...prev, event.line])
-    }
-    window.api.on(IPC.RUNS_LOG_EVENT, handler)
-    return () => { window.api.off(IPC.RUNS_LOG_EVENT, handler) }
-  }, [runId])
-
-  useEffect(() => {
-    const handler = (): void => { fetchRun(); fetchTestResults() }
-    window.api.on(IPC.RUNS_STATUS_CHANGED, handler)
-    return () => { window.api.off(IPC.RUNS_STATUS_CHANGED, handler) }
+    void fetchRun()
+    void fetchTestResults()
   }, [fetchRun, fetchTestResults])
+
+  useSocketEvent<LogEvent>(IPC.RUNS_LOG_EVENT, (event) => {
+    if (event.runId === runId) {
+      setLogs((prev) => [...prev, event.line])
+    }
+  })
+
+  useSocketEvent(IPC.RUNS_STATUS_CHANGED, () => {
+    void fetchRun()
+    void fetchTestResults()
+  })
 
   useEffect(() => {
     if (autoScroll && logEndRef.current) logEndRef.current.scrollIntoView({ behavior: 'smooth' })
   }, [logs, autoScroll])
 
-  const handleCancel = async (): Promise<void> => { if (runId) await window.api.invoke(IPC.RUNS_CANCEL, { runId }) }
+  const handleCancel = async (): Promise<void> => { if (runId) await api.invoke(IPC.RUNS_CANCEL, { runId }) }
 
   const handleRerun = async (): Promise<void> => {
     if (!runId) return
-    const result = await window.api.invoke<string>(IPC.RUNS_RERUN, { runId })
+    const result = await api.invoke<string>(IPC.RUNS_RERUN, { runId })
     const envelope = result as IpcEnvelope<string>
     if (envelope.payload) navigate(`/project/${projectId}/runs/${envelope.payload}`)
   }
 
   const handleRerunFailed = async (): Promise<void> => {
     if (!runId) return
-    const result = await window.api.invoke<string>(IPC.RUNS_RERUN_FAILED, { runId })
+    const result = await api.invoke<string>(IPC.RUNS_RERUN_FAILED, { runId })
     const envelope = result as IpcEnvelope<string>
     if (envelope.payload) navigate(`/project/${projectId}/runs/${envelope.payload}`)
   }
 
   const handleRerunSingle = async (testTitle: string): Promise<void> => {
     if (!run) return
-    const result = await window.api.invoke<string>(IPC.RUNS_START, {
+    const result = await api.invoke<string>(IPC.RUNS_START, {
       projectId,
       grepPattern: testTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
       browser: run.browserJson ? JSON.parse(run.browserJson) : { mode: 'all' },
@@ -95,9 +96,9 @@ export function RunDetailPage(): JSX.Element {
     if (envelope.payload) navigate(`/project/${projectId}/runs/${envelope.payload}`)
   }
 
-  const handleOpenReport = async (): Promise<void> => { if (runId) await window.api.invoke(IPC.ARTIFACTS_OPEN_REPORT, { runId }) }
-  const handleShowTrace = async (tracePath: string): Promise<void> => { if (projectId) await window.api.invoke(IPC.ARTIFACTS_SHOW_TRACE, { projectId, tracePath }) }
-  const handleOpenArtifact = async (filePath: string): Promise<void> => { await window.api.invoke(IPC.ARTIFACTS_OPEN, { filePath }) }
+  const handleOpenReport = async (): Promise<void> => { if (runId) await api.invoke(IPC.ARTIFACTS_OPEN_REPORT, { runId }) }
+  const handleShowTrace = async (tracePath: string): Promise<void> => { if (projectId) await api.invoke(IPC.ARTIFACTS_SHOW_TRACE, { projectId, tracePath }) }
+  const handleOpenArtifact = async (filePath: string): Promise<void> => { await api.invoke(IPC.ARTIFACTS_OPEN, { filePath }) }
 
   const toggleError = (id: string): void => {
     setExpandedErrors((prev) => {

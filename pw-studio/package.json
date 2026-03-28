@@ -1,67 +1,45 @@
 {
   "name": "pw-studio",
   "version": "0.1.0",
-  "description": "PW Studio — Playwright Test orchestration GUI",
-  "main": "./out/main/index.js",
+  "description": "PW Studio - Playwright Test orchestration GUI",
+  "main": "./dist/server/index.js",
   "scripts": {
-    "dev": "node scripts/run-electron-vite.cjs dev",
-    "build": "electron-vite build",
-    "preview": "node scripts/run-electron-vite.cjs preview",
-    "postinstall": "electron-rebuild -f -w better-sqlite3,keytar",
-    "build:win": "npm run build && electron-builder --win",
-    "build:win:portable": "npm run build && electron-builder --win portable",
-    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
-    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web"
+    "dev": "concurrently -k \"tsx watch src/server/index.ts\" \"vite\"",
+    "build": "vite build && tsc -p tsconfig.server.json",
+    "preview": "vite preview --host 127.0.0.1",
+    "start": "node dist/server/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.web.json",
+    "bundle:runtime": "npm run build && node scripts/bundle-runtime.mjs"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^8.1.0",
     "better-sqlite3": "^12.8.0",
     "chokidar": "^4.0.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
     "keytar": "^7.9.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.0.0"
+    "react-router-dom": "^7.0.0",
+    "ws": "^8.18.3",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@electron-toolkit/utils": "^4.0.0",
-    "@electron/rebuild": "^3.7.0",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.6.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.0",
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.0",
-    "electron-vite": "^5.0.0",
+    "bestzip": "^2.2.1",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.20.6",
     "typescript": "^5.7.0",
     "vite": "^6.0.0"
-  },
-  "build": {
-    "appId": "com.pwstudio.app",
-    "productName": "PW Studio",
-    "directories": {
-      "output": "dist"
-    },
-    "win": {
-      "target": [
-        {
-          "target": "nsis"
-        },
-        {
-          "target": "portable"
-        }
-      ],
-      "icon": "resources/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "files": [
-      "!**/node_modules/better-sqlite3/build/Release/obj/**"
-    ],
-    "asarUnpack": [
-      "**/node_modules/better-sqlite3/**",
-      "**/node_modules/keytar/**"
-    ]
   }
 }

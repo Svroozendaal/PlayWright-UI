@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, Environment } from '../../../shared/types/ipc'
+import { api } from '../api/client'
+import { useSocketEvent } from '../api/useSocket'
 
 type EditingEnv = {
   name: string
@@ -31,7 +33,6 @@ function fromEditing(e: EditingEnv): Environment {
 
 export function EnvironmentsPage(): JSX.Element {
   const { id: projectId } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const [environments, setEnvironments] = useState<Environment[]>([])
   const [editing, setEditing] = useState<EditingEnv | null>(null)
   const [isNew, setIsNew] = useState(false)
@@ -39,24 +40,22 @@ export function EnvironmentsPage(): JSX.Element {
 
   const fetchEnvs = useCallback(async () => {
     if (!projectId) return
-    const result = await window.api.invoke<Environment[]>(IPC.ENVIRONMENTS_LIST, { projectId })
+    const result = await api.invoke<Environment[]>(IPC.ENVIRONMENTS_LIST, { projectId })
     const envelope = result as IpcEnvelope<Environment[]>
     if (envelope.payload) setEnvironments(envelope.payload)
 
-    const projResult = await window.api.invoke<{ activeEnvironment: string | null }>(IPC.PROJECTS_GET, { id: projectId })
+    const projResult = await api.invoke<{ activeEnvironment: string | null }>(IPC.PROJECTS_GET, { id: projectId })
     const projEnvelope = projResult as IpcEnvelope<{ activeEnvironment: string | null }>
     if (projEnvelope.payload) setActiveEnv(projEnvelope.payload.activeEnvironment)
   }, [projectId])
 
   useEffect(() => {
-    fetchEnvs()
+    void fetchEnvs()
   }, [fetchEnvs])
 
-  useEffect(() => {
-    const handler = (): void => { fetchEnvs() }
-    window.api.on(IPC.ENVIRONMENTS_CHANGED, handler)
-    return () => { window.api.off(IPC.ENVIRONMENTS_CHANGED, handler) }
-  }, [fetchEnvs])
+  useSocketEvent(IPC.ENVIRONMENTS_CHANGED, () => {
+    void fetchEnvs()
+  })
 
   const handleCreate = (): void => {
     setEditing(emptyEnv())
@@ -72,21 +71,21 @@ export function EnvironmentsPage(): JSX.Element {
     if (!editing || !projectId || !editing.name.trim()) return
     const env = fromEditing(editing)
     const channel = isNew ? IPC.ENVIRONMENTS_CREATE : IPC.ENVIRONMENTS_UPDATE
-    await window.api.invoke(channel, { projectId, environment: env })
+    await api.invoke(channel, { projectId, environment: env })
     setEditing(null)
-    fetchEnvs()
+    void fetchEnvs()
   }
 
   const handleDelete = async (name: string): Promise<void> => {
     if (!projectId) return
-    await window.api.invoke(IPC.ENVIRONMENTS_DELETE, { projectId, name })
+    await api.invoke(IPC.ENVIRONMENTS_DELETE, { projectId, name })
     if (editing?.name === name) setEditing(null)
-    fetchEnvs()
+    void fetchEnvs()
   }
 
   const handleSetActive = async (name: string | null): Promise<void> => {
     if (!projectId) return
-    await window.api.invoke(IPC.PROJECTS_UPDATE_SETTINGS, {
+    await api.invoke(IPC.PROJECTS_UPDATE_SETTINGS, {
       projectId,
       activeEnvironment: name,
     })

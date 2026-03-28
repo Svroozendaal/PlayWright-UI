@@ -11,8 +11,13 @@ OPEN_BLOCKERS: [none or details]
 
 ## LIVE_LOG
 
-## HANDOFF - Init App - 2026-03-24
+CURRENT_SCOPE: Electron-to-web migration for PW Studio, with docs, runtime cutover, packaging, and verification completed in the working tree.
+ACTIVE_AGENT: Developer
+LAST_HANDOFF: Runtime migration completed on 2026-03-28 with successful typecheck, build, server smoke test, and bundled-runtime smoke test.
+OPEN_BLOCKERS: none
+
+## HANDOFF - Developer - 2026-03-28
 STATUS: COMPLETE
-NEXT_AGENT: Structure Guardian (recommended) or Architect (to begin Phase 1)
-SUMMARY: Bootstrapped `.app-info/` skeleton for PW Studio. Created all required folders, OVERVIEW files, memory templates, feature registry, config, and copied the architecture blueprint into docs. Created `CLAUDE.md` at project root to ensure all sessions use the agent framework.
+NEXT_AGENT: Developer
+SUMMARY: Documentation and implementation are both complete in the working tree. PW Studio now runs as a local Express server with a browser SPA, REST API, WebSocket push events, plugin loading, OpenAPI output, PWA metadata, and bundled-runtime packaging.
 BLOCKERS: none

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RegisteredProject, WizardParams } from '../../../shared/types/ipc'
+import { api } from '../api/client'
+import { FolderPicker } from './FolderPicker'
 
 type Step = 1 | 2 | 3 | 4
 
@@ -20,6 +22,7 @@ export function CreateProjectWizard({
   const [step, setStep] = useState<Step>(1)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [showFolderPicker, setShowFolderPicker] = useState(false)
 
   // Step 1
   const [projectName, setProjectName] = useState('')
@@ -33,14 +36,6 @@ export function CreateProjectWizard({
   const [includeAuth, setIncludeAuth] = useState(false)
   const [includePageObjects, setIncludePageObjects] = useState(false)
   const [includeFixtures, setIncludeFixtures] = useState(false)
-
-  const handlePickDirectory = async (): Promise<void> => {
-    const result = await window.api.invoke<string | null>(IPC.DIALOG_OPEN_DIRECTORY)
-    const envelope = result as IpcEnvelope<string | null>
-    if (envelope.payload) {
-      setRootPath(envelope.payload)
-    }
-  }
 
   const toggleBrowser = (id: string): void => {
     setBrowsers((prev) =>
@@ -78,7 +73,7 @@ export function CreateProjectWizard({
       includeFixtures,
     }
 
-    const result = await window.api.invoke<RegisteredProject>(IPC.PROJECTS_CREATE, params)
+    const result = await api.invoke<RegisteredProject>(IPC.PROJECTS_CREATE, params)
     const envelope = result as IpcEnvelope<RegisteredProject>
 
     if (envelope.error) {
@@ -130,7 +125,7 @@ export function CreateProjectWizard({
               <label>Project Folder</label>
               <div className="path-input">
                 <input type="text" value={rootPath} readOnly placeholder="Select a folder..." />
-                <button className="btn btn-secondary" onClick={handlePickDirectory}>
+                <button className="btn btn-secondary" onClick={() => setShowFolderPicker(true)}>
                   Browse
                 </button>
               </div>
@@ -250,6 +245,18 @@ export function CreateProjectWizard({
             </button>
           )}
         </div>
+
+        {showFolderPicker && (
+          <FolderPicker
+            title="Choose Project Folder"
+            startPath={rootPath || undefined}
+            onClose={() => setShowFolderPicker(false)}
+            onSelect={(selectedPath) => {
+              setRootPath(selectedPath)
+              setShowFolderPicker(false)
+            }}
+          />
+        )}
       </div>
     </div>
   )

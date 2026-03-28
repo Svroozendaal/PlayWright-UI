@@ -1,41 +1,43 @@
 # PW Studio
 
-PW Studio is a local Electron desktop application that wraps Playwright Test with a graphical user interface. It is an orchestration layer — not a replacement for Playwright.
+PW Studio is a local web application that wraps Playwright Test with a graphical user interface. It runs a local Node.js server and serves a browser UI on the same machine. It is an orchestration layer, not a replacement for Playwright.
 
 ## Requirements
 
-- **Node.js** >= 18
-- **npm** >= 8
+- **Node.js** >= 20
+- **npm** >= 10
 - **Playwright** >= 1.40 (installed per project)
-- **Windows** 10 or later
+- **Modern browser** with WebSocket support
 
 ## Installation
 
-### Windows Installer
+### `npm`
 
-1. Download the latest `.exe` from the Releases page.
-2. Run the installer and follow the prompts.
-3. Launch PW Studio from the Start Menu.
+```bash
+npm install
+npm run build
+npm start
+```
 
-### Portable
+### Bundled local runtime
 
-Download the portable `.exe` — no installation required. Run it directly.
+Unpack the bundled distribution, then run the provided start command from the package root.
 
 ## First Steps
 
 1. **Create a project** — click "New Project", choose a name and folder, select browsers, and PW Studio will scaffold a Playwright project with `npm install`.
-2. **Import an existing project** — click "Import Project" and select a folder that already contains a `playwright.config.ts`.
+2. **Import an existing project** — click "Import Project" and use the in-app folder browser to select a folder that already contains a `playwright.config.ts`.
 3. **Check health** — the Health Panel shows whether Node, npm, Playwright, and browsers are correctly set up.
-4. **Run tests** — open the Explorer, right-click a file or folder, and choose "Run".
+4. **Run tests** — open the Explorer, pick a file or folder, and run it.
 5. **View results** — navigate to the Runs page to see history, logs, and test results.
 
 ## Development
 
 ```bash
-# Install dependencies (rebuilds native modules automatically)
+# Install dependencies
 npm install
 
-# Start in development mode
+# Start local server + Vite
 npm run dev
 
 # Type check
@@ -44,8 +46,8 @@ npm run typecheck
 # Build for production
 npm run build
 
-# Package for Windows (installer + portable)
-npm run build:win
+# Start the built server
+npm start
 ```
 
 ## Screenshots

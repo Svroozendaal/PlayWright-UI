@@ -22,7 +22,7 @@ Never modify `.agents/` for app-specific purposes. Use `.app-info/agents/` for e
 ## Project Identity
 
 - **App:** PW Studio v1
-- **Purpose:** Local Electron desktop app that wraps Playwright Test with a GUI — an orchestration layer, not a replacement.
+- **Purpose:** Local web application that wraps Playwright Test with a GUI — an orchestration layer, not a replacement.
 - **Blueprint:** `.app-info/docs/PW_STUDIO_BLUEPRINT.md`
 
 ## Core Conventions
@@ -30,9 +30,10 @@ Never modify `.agents/` for app-specific purposes. Use `.app-info/agents/` for e
 - Use UK English in all documentation.
 - Use the local Playwright binary (`node_modules/.bin/playwright`), never `npx`.
 - `--reporter=json` is the standard parseable output.
-- All secrets via OS keychain (keytar) — no plaintext fallback.
-- IPC uses the envelope pattern defined in `src/shared/types/ipc.ts`.
+- All secrets use the OS keychain via `keytar` — no plaintext fallback.
+- API responses use the envelope pattern defined in `src/shared/types/ipc.ts`.
+- Use `npm run dev` to start the local server and Vite dev server together.
 
 ## Stack
 
-Electron | React + TypeScript | Node.js + TypeScript | SQLite (better-sqlite3) | chokidar | keytar | electron-builder
+Express | React + TypeScript | Node.js + TypeScript | SQLite (`better-sqlite3`) | WebSocket (`ws`) | chokidar | `keytar`

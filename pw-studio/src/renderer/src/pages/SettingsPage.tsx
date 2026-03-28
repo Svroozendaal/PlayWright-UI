@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, AppInfo, RegisteredProject, Environment } from '../../../shared/types/ipc'
+import { api } from '../api/client'
 
 export function SettingsPage(): JSX.Element {
   const { id: projectId } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [copied, setCopied] = useState(false)
   const [project, setProject] = useState<RegisteredProject | null>(null)
@@ -14,39 +14,39 @@ export function SettingsPage(): JSX.Element {
 
   useEffect(() => {
     const load = async (): Promise<void> => {
-      const result = await window.api.invoke<AppInfo>(IPC.SETTINGS_GET_APP_INFO)
+      const result = await api.invoke<AppInfo>(IPC.SETTINGS_GET_APP_INFO)
       const envelope = result as IpcEnvelope<AppInfo>
       if (envelope.payload) {
         setAppInfo(envelope.payload)
       }
     }
-    load()
+    void load()
   }, [])
 
   useEffect(() => {
     if (!projectId) return
 
     const loadProject = async (): Promise<void> => {
-      const result = await window.api.invoke<RegisteredProject>(IPC.PROJECTS_GET, { id: projectId })
+      const result = await api.invoke<RegisteredProject>(IPC.PROJECTS_GET, { id: projectId })
       const envelope = result as IpcEnvelope<RegisteredProject>
       if (envelope.payload) setProject(envelope.payload)
     }
 
     const loadEnvs = async (): Promise<void> => {
-      const result = await window.api.invoke<Environment[]>(IPC.ENVIRONMENTS_LIST, { projectId })
+      const result = await api.invoke<Environment[]>(IPC.ENVIRONMENTS_LIST, { projectId })
       const envelope = result as IpcEnvelope<Environment[]>
       if (envelope.payload) setEnvironments(envelope.payload)
     }
 
     const loadBrowsers = async (): Promise<void> => {
-      const result = await window.api.invoke<{ projects: string[] }>(IPC.HEALTH_GET_CONFIG, { projectId })
+      const result = await api.invoke<{ projects: string[] }>(IPC.HEALTH_GET_CONFIG, { projectId })
       const envelope = result as IpcEnvelope<{ projects: string[] }>
       if (envelope.payload?.projects) setBrowserProjects(envelope.payload.projects)
     }
 
-    loadProject()
-    loadEnvs()
-    loadBrowsers()
+    void loadProject()
+    void loadEnvs()
+    void loadBrowsers()
   }, [projectId])
 
   const handleCopy = async (text: string): Promise<void> => {
@@ -61,7 +61,7 @@ export function SettingsPage(): JSX.Element {
 
   const handleUpdateBrowser = async (value: string): Promise<void> => {
     if (!projectId) return
-    await window.api.invoke(IPC.PROJECTS_UPDATE_SETTINGS, {
+    await api.invoke(IPC.PROJECTS_UPDATE_SETTINGS, {
       projectId,
       defaultBrowser: value || null,
     })
@@ -70,7 +70,7 @@ export function SettingsPage(): JSX.Element {
 
   const handleUpdateEnv = async (value: string): Promise<void> => {
     if (!projectId) return
-    await window.api.invoke(IPC.PROJECTS_UPDATE_SETTINGS, {
+    await api.invoke(IPC.PROJECTS_UPDATE_SETTINGS, {
       projectId,
       activeEnvironment: value || null,
     })
@@ -160,7 +160,7 @@ export function SettingsPage(): JSX.Element {
         <div className="settings-section">
           <h3>About</h3>
           <p style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
-            PW Studio is a local Electron desktop app that wraps Playwright Test with a GUI.
+            PW Studio is a local web application that wraps Playwright Test with a GUI.
             It is an orchestration layer, not a replacement for Playwright.
           </p>
         </div>

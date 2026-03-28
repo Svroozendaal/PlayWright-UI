@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ExplorerPage } from './pages/ExplorerPage'
@@ -14,7 +14,7 @@ import './App.css'
 
 export function App(): JSX.Element {
   return (
-    <HashRouter>
+    <BrowserRouter>
       <Routes>
         <Route path="/" element={<ProjectsPage />} />
         <Route path="/project/:id" element={<ProjectLayout />}>
@@ -30,6 +30,6 @@ export function App(): JSX.Element {
         </Route>
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
-    </HashRouter>
+    </BrowserRouter>
   )
 }

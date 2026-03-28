@@ -7,11 +7,10 @@
     "target": "ESNext",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "outDir": "./out/tsconfig.web.tsbuildinfo"
+    "tsBuildInfoFile": "./out/tsbuild/web.tsbuildinfo"
   },
   "include": [
     "src/renderer/src/**/*",
-    "src/shared/**/*",
-    "src/preload/index.d.ts"
+    "src/shared/**/*"
   ]
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RunRequest, BrowserSelection, Environment, RegisteredProject } from '../../../shared/types/ipc'
+import { api } from '../api/client'
 import { ErrorBanner } from './ErrorBanner'
 
 type RunDialogProps = {
@@ -35,7 +36,7 @@ export function RunDialog({
 
   useEffect(() => {
     const fetchConfig = async (): Promise<void> => {
-      const result = await window.api.invoke<{ projects: string[] }>(IPC.HEALTH_GET_CONFIG, { projectId })
+      const result = await api.invoke<{ projects: string[] }>(IPC.HEALTH_GET_CONFIG, { projectId })
       const envelope = result as IpcEnvelope<{ projects: string[] }>
       if (envelope.payload?.projects) {
         setProjects(envelope.payload.projects)
@@ -43,13 +44,13 @@ export function RunDialog({
     }
 
     const fetchEnvironments = async (): Promise<void> => {
-      const result = await window.api.invoke<Environment[]>(IPC.ENVIRONMENTS_LIST, { projectId })
+      const result = await api.invoke<Environment[]>(IPC.ENVIRONMENTS_LIST, { projectId })
       const envelope = result as IpcEnvelope<Environment[]>
       if (envelope.payload) setEnvironments(envelope.payload)
     }
 
     const fetchProjectDefaults = async (): Promise<void> => {
-      const result = await window.api.invoke<RegisteredProject>(IPC.PROJECTS_GET, { id: projectId })
+      const result = await api.invoke<RegisteredProject>(IPC.PROJECTS_GET, { id: projectId })
       const envelope = result as IpcEnvelope<RegisteredProject>
       if (envelope.payload) {
         if (envelope.payload.defaultBrowser) setSelectedBrowser(envelope.payload.defaultBrowser)
@@ -57,9 +58,9 @@ export function RunDialog({
       }
     }
 
-    fetchConfig()
-    fetchEnvironments()
-    fetchProjectDefaults()
+    void fetchConfig()
+    void fetchEnvironments()
+    void fetchProjectDefaults()
   }, [projectId])
 
   const handleStart = async (): Promise<void> => {
@@ -86,7 +87,7 @@ export function RunDialog({
       streamLogs: true,
     }
 
-    const result = await window.api.invoke<string>(IPC.RUNS_START, request)
+    const result = await api.invoke<string>(IPC.RUNS_START, request)
     const envelope = result as IpcEnvelope<string>
 
     setStarting(false)

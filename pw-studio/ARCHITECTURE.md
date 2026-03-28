@@ -2,18 +2,18 @@
 
 ## Overview
 
-PW Studio is structured in four layers, following the Electron process model:
+PW Studio is structured in four layers around a local web runtime:
 
-```
+```text
 ┌───────────────────────────────┐
-│         Renderer (UI)         │  React + TypeScript
-│   Pages, Components, Hooks    │  HashRouter, no Node access
+│          Browser UI           │  React + TypeScript
+│   Pages, Components, Hooks    │  BrowserRouter, no Node access
 ├───────────────────────────────┤
-│         Preload Bridge        │  contextBridge
-│   window.api.invoke/on/off    │  IpcEnvelope wrapper
+│        API Client Layer       │  fetch + WebSocket
+│   ApiEnvelope + useSocket     │  shared route and event constants
 ├───────────────────────────────┤
-│       Main Process (Backend)  │  Node.js + TypeScript
-│   Services, IPC Handlers, DB  │  All business logic here
+│      Local Server Layer       │  Express + TypeScript
+│   Routes, Services, Plugins   │  all business logic here
 ├───────────────────────────────┤
 │       System / OS Layer       │  SQLite, keytar, chokidar
 │   File system, child_process  │  Playwright binary spawn
@@ -22,50 +22,50 @@ PW Studio is structured in four layers, following the Electron process model:
 
 ## Layer Responsibilities
 
-### Renderer (React)
-- Displays UI, handles user interaction.
-- Communicates with main process exclusively via `window.api.invoke()` (request/response) and `window.api.on()`/`off()` (push events).
-- No direct access to Node.js, file system, or database.
-- Routes: Projects, Project Detail, Explorer, Runs, Run Detail, Settings.
+### Browser UI
 
-### Preload
-- Bridges renderer and main process via `contextBridge.exposeInMainWorld()`.
-- Wraps all calls in the `IpcEnvelope` protocol (version, payload, error).
-- Three methods: `invoke`, `on`, `off`.
+- Displays the UI and handles user interaction.
+- Talks to the backend via the fetch client and shared WebSocket hook.
+- Has no direct access to Node.js, filesystem, or database APIs.
 
-### Main Process
-- **ServiceContainer**: Dependency injection — plain object holding all service instances.
-- **Services**: Business logic (ProjectRegistry, Health, FileWatch, ProjectIndex, Run, Artifact, Settings, etc.).
-- **IPC Handlers**: One file per domain, registered centrally in `registerAllHandlers()`.
-- **Database**: SQLite via better-sqlite3, WAL mode, migration runner.
-- **Utils**: Playwright binary detection, config reader, result parser.
+### API Client Layer
+
+- Wraps HTTP calls in `ApiEnvelope<T>`.
+- Maintains a singleton WebSocket connection.
+- Maps server push events into React subscriptions.
+
+### Local Server Layer
+
+- `ServiceContainer`: dependency injection for long-lived services and runtime helpers.
+- `routes/`: one route module per domain.
+- `services/`: project registry, health, file watching, indexing, runs, artifacts, settings, secrets, environments, recorder, dashboard.
+- `plugins/`: optional in-process extensions.
+- `openapi.ts`: generated API contract.
 
 ### System Layer
-- **SQLite** (better-sqlite3): Persists projects, runs, test results, artifact policies, settings.
-- **keytar**: OS keychain for secrets — no plaintext fallback.
-- **chokidar**: File watching with debounce — triggers index rebuild and cache invalidation.
-- **child_process**: Spawns Playwright binary for test runs and codegen.
 
-## IPC Protocol
+- **SQLite (`better-sqlite3`)**: persists projects, runs, results, artifact policies, and settings.
+- **`keytar`**: OS keychain for secrets, no plaintext fallback.
+- **chokidar**: file watching with debounce for index and cache invalidation.
+- **`child_process`**: spawns Playwright for test runs and codegen.
 
-All communication uses `IpcEnvelope<T>`:
-```typescript
-type IpcEnvelope<T> = {
-  version: 1
-  payload?: T
-  error?: { code: string; message: string }
-}
-```
+## Transport Model
 
-Error codes are defined as constants in `ERROR_CODES`. Every IPC handler returns an envelope — never throws to the renderer.
+- HTTP endpoints live under `/api`
+- Push events use `/ws`
+- All route responses use `ApiEnvelope<T>`
+- Shared constants define routes, events, and error codes
 
 ## Database
 
-Located at `app.getPath('userData')/pw-studio.db`. Three migrations:
-1. `projects`, `app_settings`, `project_health_snapshots`
-2. `runs`, `run_test_results`
-3. `file_artifact_policies`, `parentRunId`, `safeTitleForGrep`
+The database lives in the local app-data directory:
+
+- Windows: `%APPDATA%/pw-studio/pw-studio.db`
+- macOS: `~/Library/Application Support/pw-studio/pw-studio.db`
+- Linux: `~/.config/pw-studio/pw-studio.db`
+
+Migrations are append-only and run at server start before the app begins serving requests.
 
 ## Full Specification
 
-See `.app-info/docs/PW_STUDIO_BLUEPRINT.md` for the complete architecture blueprint, including all IPC channels, database schema, service boundaries, and build phases.
+See `.app-info/docs/PW_STUDIO_BLUEPRINT.md` for the complete architecture blueprint, including routes, event flow, database rules, plugin boundaries, and build phases.

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RunRecord, RunStatus } from '../../../shared/types/ipc'
+import { api } from '../api/client'
+import { useSocketEvent } from '../api/useSocket'
 
 function statusBadge(status: RunStatus): { label: string; className: string } {
   switch (status) {
@@ -24,7 +26,7 @@ export function RunsPage(): JSX.Element {
 
   const fetchRuns = useCallback(async () => {
     if (!projectId) return
-    const result = await window.api.invoke<RunRecord[]>(IPC.RUNS_LIST, { projectId })
+    const result = await api.invoke<RunRecord[]>(IPC.RUNS_LIST, { projectId })
     const envelope = result as IpcEnvelope<RunRecord[]>
     if (envelope.payload) {
       setRuns(envelope.payload)
@@ -32,14 +34,12 @@ export function RunsPage(): JSX.Element {
   }, [projectId])
 
   useEffect(() => {
-    fetchRuns()
+    void fetchRuns()
   }, [fetchRuns])
 
-  useEffect(() => {
-    const handler = (): void => { fetchRuns() }
-    window.api.on(IPC.RUNS_STATUS_CHANGED, handler)
-    return () => { window.api.off(IPC.RUNS_STATUS_CHANGED, handler) }
-  }, [fetchRuns])
+  useSocketEvent(IPC.RUNS_STATUS_CHANGED, () => {
+    void fetchRuns()
+  })
 
   const filtered = filter === 'all' ? runs : runs.filter((r) => r.status === filter)
 

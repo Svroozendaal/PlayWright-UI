@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, FlakyTestRecord, TestHistoryEntry } from '../../../shared/types/ipc'
+import { api } from '../api/client'
 
 export function FlakyTestsPage(): JSX.Element {
   const { id: projectId } = useParams<{ id: string }>()
@@ -12,19 +13,19 @@ export function FlakyTestsPage(): JSX.Element {
 
   const fetchFlaky = useCallback(async () => {
     if (!projectId) return
-    const result = await window.api.invoke<FlakyTestRecord[]>(IPC.FLAKY_LIST, { projectId })
+    const result = await api.invoke<FlakyTestRecord[]>(IPC.FLAKY_LIST, { projectId })
     const envelope = result as IpcEnvelope<FlakyTestRecord[]>
     if (envelope.payload) setRecords(envelope.payload)
   }, [projectId])
 
   useEffect(() => {
-    fetchFlaky()
+    void fetchFlaky()
   }, [fetchFlaky])
 
   const handleSelectTest = async (testTitle: string): Promise<void> => {
     setSelectedTest(testTitle)
     if (!projectId) return
-    const result = await window.api.invoke<TestHistoryEntry[]>(IPC.FLAKY_TEST_HISTORY, { projectId, testTitle })
+    const result = await api.invoke<TestHistoryEntry[]>(IPC.FLAKY_TEST_HISTORY, { projectId, testTitle })
     const envelope = result as IpcEnvelope<TestHistoryEntry[]>
     if (envelope.payload) setHistory(envelope.payload)
   }

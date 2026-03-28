@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, DashboardStats, RunRecord, RunRequest } from '../../../shared/types/ipc'
+import { api } from '../api/client'
+import { useSocketEvent } from '../api/useSocket'
 import { useProject } from '../components/ProjectLayout'
 
 function statusBadgeClass(status: string): string {
@@ -32,7 +34,7 @@ export function DashboardPage(): JSX.Element {
 
   useEffect(() => {
     const load = async (): Promise<void> => {
-      const result = await window.api.invoke<DashboardStats>(IPC.DASHBOARD_GET_STATS, {
+      const result = await api.invoke<DashboardStats>(IPC.DASHBOARD_GET_STATS, {
         projectId: project.id,
       })
       const envelope = result as IpcEnvelope<DashboardStats>
@@ -41,12 +43,20 @@ export function DashboardPage(): JSX.Element {
       }
       setLoading(false)
     }
-    load()
-
-    const handler = (): void => { load() }
-    window.api.on(IPC.RUNS_STATUS_CHANGED, handler)
-    return () => { window.api.off(IPC.RUNS_STATUS_CHANGED, handler) }
+    void load()
   }, [project.id])
+
+  useSocketEvent(IPC.RUNS_STATUS_CHANGED, () => {
+    void api.invoke<DashboardStats>(IPC.DASHBOARD_GET_STATS, {
+      projectId: project.id,
+    }).then((result) => {
+      const envelope = result as IpcEnvelope<DashboardStats>
+      if (envelope.payload) {
+        setStats(envelope.payload)
+      }
+      setLoading(false)
+    })
+  })
 
   const handleRunAll = async (): Promise<void> => {
     const request: RunRequest = {
@@ -58,7 +68,7 @@ export function DashboardPage(): JSX.Element {
       headed: false,
       streamLogs: true,
     }
-    const result = await window.api.invoke<string>(IPC.RUNS_START, request)
+    const result = await api.invoke<string>(IPC.RUNS_START, request)
     const envelope = result as IpcEnvelope<string>
     if (envelope.payload) {
       navigate(`/project/${project.id}/runs/${envelope.payload}`)

@@ -1,111 +1,170 @@
-// IPC Envelope — the standard response wrapper for all IPC communication
-export type IpcEnvelope<T> = {
+export type ApiEnvelope<T> = {
   version: 1
   payload?: T
   error?: { code: string; message: string }
 }
 
-// All IPC channel constants — defined upfront for all phases.
-// Handlers are registered incrementally per phase.
+export type IpcEnvelope<T> = ApiEnvelope<T>
+
+export const API_ROUTES = {
+  PROJECTS_LIST: '/projects',
+  PROJECTS_CREATE: '/projects',
+  PROJECTS_IMPORT: '/projects/import',
+  PROJECTS_GET: '/projects/:id',
+  PROJECTS_OPEN: '/projects/:id/open',
+  PROJECTS_REMOVE: '/projects/:id',
+  PROJECTS_UPDATE_SETTINGS: '/projects/:id/settings',
+
+  DIRECTORIES_BROWSE: '/directories/browse',
+
+  HEALTH_GET: '/projects/:id/health',
+  HEALTH_REFRESH: '/projects/:id/health/refresh',
+  HEALTH_GET_CONFIG: '/projects/:id/config',
+
+  EXPLORER_GET_TREE: '/projects/:id/explorer/tree',
+  EXPLORER_REFRESH: '/projects/:id/explorer/refresh',
+  EXPLORER_GET_FILE_POLICY: '/projects/:id/explorer/file-policy',
+  EXPLORER_SET_FILE_POLICY: '/projects/:id/explorer/file-policy',
+  EXPLORER_GET_LAST_RESULTS: '/projects/:id/explorer/last-results',
+
+  RUNS_START: '/projects/:id/runs',
+  RUNS_GET_ACTIVE: '/projects/:id/runs/active',
+  RUNS_LIST: '/projects/:id/runs',
+  RUNS_GET_BY_ID: '/runs/:runId',
+  RUNS_CANCEL: '/runs/:runId',
+  RUNS_RERUN: '/runs/:runId/rerun',
+  RUNS_RERUN_FAILED: '/runs/:runId/rerun-failed',
+  RUNS_GET_TEST_RESULTS: '/runs/:runId/results',
+  RUNS_COMPARE: '/runs/compare',
+
+  ARTIFACTS_LIST_BY_RUN: '/runs/:runId/artifacts',
+  ARTIFACTS_OPEN: '/artifacts/open',
+  ARTIFACTS_OPEN_REPORT: '/artifacts/open-report',
+  ARTIFACTS_SHOW_TRACE: '/artifacts/show-trace',
+
+  ENVIRONMENTS_LIST: '/projects/:id/environments',
+  ENVIRONMENTS_CREATE: '/projects/:id/environments',
+  ENVIRONMENTS_UPDATE: '/environments/:envId',
+  ENVIRONMENTS_DELETE: '/environments/:envId',
+
+  SECRETS_SET: '/secrets',
+  SECRETS_GET_MASKED: '/secrets/masked',
+  SECRETS_DELETE: '/secrets',
+
+  RECORDER_START: '/projects/:id/recorder/start',
+  RECORDER_STOP: '/recorder/stop',
+  RECORDER_STATUS: '/recorder/status',
+  RECORDER_SAVE: '/recorder/save',
+
+  FILE_READ: '/files/read',
+  FILE_WRITE: '/files/write',
+  FILE_CREATE: '/files/create',
+
+  FLAKY_LIST: '/projects/:id/flaky',
+  FLAKY_TEST_HISTORY: '/projects/:id/flaky/:testTitle/history',
+
+  DASHBOARD_GET_STATS: '/projects/:id/dashboard',
+
+  SETTINGS_GET_APP_INFO: '/settings/app-info',
+  SETTINGS_GET: '/settings/:key',
+  SETTINGS_SET: '/settings/:key',
+
+  OPENAPI: '/openapi.json',
+} as const
+
+export const WS_EVENTS = {
+  RUNS_LOG_EVENT: 'runs:logEvent',
+  RUNS_STATUS_CHANGED: 'runs:statusChanged',
+  ENVIRONMENTS_CHANGED: 'environments:changed',
+  HEALTH_REFRESH: 'health:refresh',
+  RECORDER_STATUS: 'recorder:status',
+  EXPLORER_REFRESH: 'explorer:refresh',
+} as const
+
+// Temporary compatibility export during the migration.
 export const IPC = {
-  // Projects (Phase 1)
-  PROJECTS_LIST:            'projects:list',
-  PROJECTS_CREATE:          'projects:create',
-  PROJECTS_IMPORT:          'projects:import',
-  PROJECTS_GET:             'projects:get',
-  PROJECTS_OPEN:            'projects:open',
-  PROJECTS_REMOVE:          'projects:remove',
+  PROJECTS_LIST: 'projects:list',
+  PROJECTS_CREATE: 'projects:create',
+  PROJECTS_IMPORT: 'projects:import',
+  PROJECTS_GET: 'projects:get',
+  PROJECTS_OPEN: 'projects:open',
+  PROJECTS_REMOVE: 'projects:remove',
   PROJECTS_UPDATE_SETTINGS: 'projects:updateSettings',
 
-  // Dialog (Phase 1)
-  DIALOG_OPEN_DIRECTORY:    'dialog:openDirectory',
-  DIALOG_SAVE_FILE:         'dialog:saveFile',
+  DIALOG_OPEN_DIRECTORY: 'dialog:openDirectory',
+  DIALOG_SAVE_FILE: 'dialog:saveFile',
 
-  // Health (Phase 2)
-  HEALTH_GET:               'health:get',
-  HEALTH_REFRESH:           'health:refresh',
-  HEALTH_GET_CONFIG:        'health:getConfig',
+  HEALTH_GET: 'health:get',
+  HEALTH_REFRESH: 'health:refresh',
+  HEALTH_GET_CONFIG: 'health:getConfig',
 
-  // Explorer (Phase 3)
-  EXPLORER_GET_TREE:        'explorer:getTree',
-  EXPLORER_REFRESH:         'explorer:refresh',
+  EXPLORER_GET_TREE: 'explorer:getTree',
+  EXPLORER_REFRESH: 'explorer:refresh',
   EXPLORER_GET_FILE_POLICY: 'explorer:getFilePolicy',
   EXPLORER_SET_FILE_POLICY: 'explorer:setFilePolicy',
-
-  // Runs (Phase 4)
-  RUNS_START:               'runs:start',
-  RUNS_GET_ACTIVE:          'runs:getActive',
-  RUNS_LIST:                'runs:list',
-  RUNS_GET_BY_ID:           'runs:getById',
-  RUNS_CANCEL:              'runs:cancel',
-  RUNS_RERUN:               'runs:rerun',
-  RUNS_RERUN_FAILED:        'runs:rerunFailed',
-  RUNS_LOG_EVENT:           'runs:logEvent',
-  RUNS_STATUS_CHANGED:      'runs:statusChanged',
-  RUNS_GET_TEST_RESULTS:    'runs:getTestResults',
-  RUNS_COMPARE:             'runs:compare',
-
-  // Environments (Phase 6)
-  ENVIRONMENTS_LIST:        'environments:list',
-  ENVIRONMENTS_CREATE:      'environments:create',
-  ENVIRONMENTS_UPDATE:      'environments:update',
-  ENVIRONMENTS_DELETE:      'environments:delete',
-  ENVIRONMENTS_CHANGED:     'environments:changed',
-
-  // Secrets (Phase 6)
-  SECRETS_SET:              'secrets:set',
-  SECRETS_GET_MASKED:       'secrets:getMasked',
-  SECRETS_DELETE:           'secrets:delete',
-
-  // Recorder (Phase 6)
-  RECORDER_START:           'recorder:start',
-  RECORDER_STOP:            'recorder:stop',
-  RECORDER_SAVE:            'recorder:save',
-  RECORDER_STATUS:          'recorder:status',
-
-  // Artifacts (Phase 5)
-  ARTIFACTS_LIST_BY_RUN:    'artifacts:listByRun',
-  ARTIFACTS_OPEN:           'artifacts:open',
-  ARTIFACTS_OPEN_REPORT:    'artifacts:openReport',
-  ARTIFACTS_SHOW_TRACE:     'artifacts:showTrace',
-
-  // Flaky test tracking (Phase 6)
-  FLAKY_LIST:               'flaky:list',
-  FLAKY_TEST_HISTORY:       'flaky:testHistory',
-
-  // Settings (Phase 7)
-  SETTINGS_GET_APP_INFO:    'settings:getAppInfo',
-  SETTINGS_GET:             'settings:get',
-  SETTINGS_SET:             'settings:set',
-
-  // File operations (Phase 8)
-  FILE_READ:                'file:read',
-  FILE_WRITE:               'file:write',
-  FILE_CREATE:              'file:create',
-
-  // Dashboard (Phase 8)
-  DASHBOARD_GET_STATS:      'dashboard:getStats',
-
-  // Explorer enhancements (Phase 8)
   EXPLORER_GET_LAST_RESULTS: 'explorer:getLastResults',
+
+  RUNS_START: 'runs:start',
+  RUNS_GET_ACTIVE: 'runs:getActive',
+  RUNS_LIST: 'runs:list',
+  RUNS_GET_BY_ID: 'runs:getById',
+  RUNS_CANCEL: 'runs:cancel',
+  RUNS_RERUN: 'runs:rerun',
+  RUNS_RERUN_FAILED: 'runs:rerunFailed',
+  RUNS_GET_TEST_RESULTS: 'runs:getTestResults',
+  RUNS_COMPARE: 'runs:compare',
+  RUNS_LOG_EVENT: WS_EVENTS.RUNS_LOG_EVENT,
+  RUNS_STATUS_CHANGED: WS_EVENTS.RUNS_STATUS_CHANGED,
+
+  ENVIRONMENTS_LIST: 'environments:list',
+  ENVIRONMENTS_CREATE: 'environments:create',
+  ENVIRONMENTS_UPDATE: 'environments:update',
+  ENVIRONMENTS_DELETE: 'environments:delete',
+  ENVIRONMENTS_CHANGED: WS_EVENTS.ENVIRONMENTS_CHANGED,
+
+  SECRETS_SET: 'secrets:set',
+  SECRETS_GET_MASKED: 'secrets:getMasked',
+  SECRETS_DELETE: 'secrets:delete',
+
+  RECORDER_START: 'recorder:start',
+  RECORDER_STOP: 'recorder:stop',
+  RECORDER_SAVE: 'recorder:save',
+  RECORDER_STATUS: WS_EVENTS.RECORDER_STATUS,
+
+  ARTIFACTS_LIST_BY_RUN: 'artifacts:listByRun',
+  ARTIFACTS_OPEN: 'artifacts:open',
+  ARTIFACTS_OPEN_REPORT: 'artifacts:openReport',
+  ARTIFACTS_SHOW_TRACE: 'artifacts:showTrace',
+
+  FLAKY_LIST: 'flaky:list',
+  FLAKY_TEST_HISTORY: 'flaky:testHistory',
+
+  SETTINGS_GET_APP_INFO: 'settings:getAppInfo',
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SET: 'settings:set',
+
+  FILE_READ: 'file:read',
+  FILE_WRITE: 'file:write',
+  FILE_CREATE: 'file:create',
+
+  DASHBOARD_GET_STATS: 'dashboard:getStats',
 } as const
 
-// Error codes for IpcEnvelope.error.code
 export const ERROR_CODES = {
-  PROJECT_NOT_FOUND:        'PROJECT_NOT_FOUND',
-  PROJECT_EXISTS:           'PROJECT_EXISTS',
-  HEALTH_CHECK_FAILED:      'HEALTH_CHECK_FAILED',
-  CONFIG_NOT_READABLE:      'CONFIG_NOT_READABLE',
-  ACTIVE_RUN_EXISTS:        'ACTIVE_RUN_EXISTS',
-  RUN_NOT_FOUND:            'RUN_NOT_FOUND',
-  SECRETS_UNAVAILABLE:      'SECRETS_UNAVAILABLE',
-  ENVIRONMENT_NOT_FOUND:    'ENVIRONMENT_NOT_FOUND',
+  PROJECT_NOT_FOUND: 'PROJECT_NOT_FOUND',
+  PROJECT_EXISTS: 'PROJECT_EXISTS',
+  HEALTH_CHECK_FAILED: 'HEALTH_CHECK_FAILED',
+  CONFIG_NOT_READABLE: 'CONFIG_NOT_READABLE',
+  ACTIVE_RUN_EXISTS: 'ACTIVE_RUN_EXISTS',
+  RUN_NOT_FOUND: 'RUN_NOT_FOUND',
+  SECRETS_UNAVAILABLE: 'SECRETS_UNAVAILABLE',
+  ENVIRONMENT_NOT_FOUND: 'ENVIRONMENT_NOT_FOUND',
   RECORDER_ALREADY_RUNNING: 'RECORDER_ALREADY_RUNNING',
-  INVALID_PATH:             'INVALID_PATH',
-  UNKNOWN:                  'UNKNOWN',
+  INVALID_PATH: 'INVALID_PATH',
+  INVALID_INPUT: 'INVALID_INPUT',
+  UNKNOWN: 'UNKNOWN',
 } as const
 
-// Domain types used across main and renderer
 export type RegisteredProject = {
   id: string
   name: string
@@ -120,10 +179,9 @@ export type RegisteredProject = {
 
 export type AppSetting = {
   key: string
-  value: string // JSON-encoded
+  value: string
 }
 
-// Health types (Phase 2)
 export type HealthStatus = 'pass' | 'warning' | 'error'
 
 export type HealthItem = {
@@ -141,7 +199,6 @@ export type HealthSnapshot = {
   items: HealthItem[]
 }
 
-// Wizard types (Phase 2)
 export type WizardParams = {
   projectName: string
   rootPath: string
@@ -152,7 +209,6 @@ export type WizardParams = {
   includeFixtures: boolean
 }
 
-// Run types (Phase 4)
 export type RunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'config-error' | 'cancelled'
 
 export type BrowserSelection =
@@ -217,7 +273,6 @@ export type LogEvent = {
   source: 'stdout' | 'stderr'
 }
 
-// Environment types (Phase 6)
 export type Environment = {
   name: string
   baseURL: string
@@ -238,20 +293,22 @@ export type CodegenOptions = {
 
 export type RecorderStatus = 'idle' | 'running'
 
-// App info (Phase 7)
+export type RecorderStatusEvent = {
+  status: RecorderStatus
+  error?: string
+}
+
 export type AppInfo = {
   databasePath: string
   version: string
   userDataPath: string
 }
 
-// Secrets types (Phase 6)
 export type MaskedSecret = {
   key: string
   masked: string
 }
 
-// Flaky test tracking types (Phase 6)
 export type FlakyTestRecord = {
   testTitle: string
   projectId: string
@@ -270,7 +327,6 @@ export type TestHistoryEntry = {
   retryCount: number
 }
 
-// Run comparison types (Phase 6)
 export type ComparedTest = {
   testTitle: string
   statusA: string | null
@@ -286,14 +342,12 @@ export type RunComparison = {
   tests: ComparedTest[]
 }
 
-// Project settings update (Phase 6)
 export type ProjectSettingsUpdate = {
   projectId: string
   defaultBrowser?: string | null
   activeEnvironment?: string | null
 }
 
-// Explorer types (Phase 3)
 export type ExplorerNodeType = 'directory' | 'file' | 'testFile' | 'testCase'
 
 export type ExplorerNode = {
@@ -307,7 +361,6 @@ export type ExplorerNode = {
   testTitle?: string
 }
 
-// File operations types (Phase 8)
 export type FileReadResult = {
   content: string
   encoding: 'utf-8'
@@ -315,7 +368,6 @@ export type FileReadResult = {
   lastModified: string
 }
 
-// Dashboard types (Phase 8)
 export type DashboardStats = {
   totalFiles: number
   totalTests: number
@@ -324,5 +376,16 @@ export type DashboardStats = {
   recentRuns: RunRecord[]
 }
 
-// Explorer last run results (Phase 8)
 export type TestStatusMap = Record<string, 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted'>
+
+export type DirectoryEntry = {
+  name: string
+  type: 'directory' | 'file'
+  path: string
+}
+
+export type DirectoryBrowseResult = {
+  currentPath: string
+  parentPath: string | null
+  entries: DirectoryEntry[]
+}

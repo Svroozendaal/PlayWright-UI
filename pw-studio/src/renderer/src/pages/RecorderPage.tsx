@@ -2,8 +2,31 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RecorderStatus, Environment } from '../../../shared/types/ipc'
+import { api } from '../api/client'
+import { useSocketEvent } from '../api/useSocket'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { FolderPicker } from '../components/FolderPicker'
 import { useProject } from '../components/ProjectLayout'
+
+function joinPath(directory: string, fileName: string): string {
+  if (!directory) {
+    return fileName
+  }
+
+  if (!fileName) {
+    return directory
+  }
+
+  if (directory.endsWith('\\') || directory.endsWith('/')) {
+    return `${directory}${fileName}`
+  }
+
+  if (directory.includes('\\')) {
+    return `${directory}\\${fileName}`
+  }
+
+  return `${directory}/${fileName}`
+}
 
 export function RecorderPage(): JSX.Element {
   const { id: projectId } = useParams<{ id: string }>()
@@ -11,75 +34,68 @@ export function RecorderPage(): JSX.Element {
   const { project } = useProject()
   const [status, setStatus] = useState<RecorderStatus>('idle')
   const [startUrl, setStartUrl] = useState('http://localhost:3000')
-  const [outputPath, setOutputPath] = useState('')
+  const [outputDirectory, setOutputDirectory] = useState('')
+  const [fileName, setFileName] = useState('recorded-test.spec.ts')
   const [browser, setBrowser] = useState('chromium')
   const [error, setError] = useState<{ code: string; message: string } | null>(null)
   const [savedFile, setSavedFile] = useState<string | null>(null)
+  const [showFolderPicker, setShowFolderPicker] = useState(false)
+  const outputPath = joinPath(outputDirectory.trim(), fileName.trim())
 
   useEffect(() => {
     const fetchStatus = async (): Promise<void> => {
-      const result = await window.api.invoke<RecorderStatus>(IPC.RECORDER_STATUS)
+      const result = await api.invoke<RecorderStatus>(IPC.RECORDER_STATUS)
       const envelope = result as IpcEnvelope<RecorderStatus>
       if (envelope.payload) setStatus(envelope.payload)
     }
-    fetchStatus()
+    void fetchStatus()
   }, [])
+
+  useEffect(() => {
+    if (!outputDirectory && project?.rootPath) {
+      setOutputDirectory(project.rootPath)
+    }
+  }, [outputDirectory, project?.rootPath])
 
   // Pre-fill start URL from active environment's baseURL
   useEffect(() => {
     if (!projectId || !project?.activeEnvironment) return
     const loadEnvUrl = async (): Promise<void> => {
-      const result = await window.api.invoke<Environment[]>(IPC.ENVIRONMENTS_LIST, { projectId })
+      const result = await api.invoke<Environment[]>(IPC.ENVIRONMENTS_LIST, { projectId })
       const envelope = result as IpcEnvelope<Environment[]>
       const activeEnv = envelope.payload?.find((e) => e.name === project.activeEnvironment)
       if (activeEnv?.baseURL) setStartUrl(activeEnv.baseURL)
     }
-    loadEnvUrl()
+    void loadEnvUrl()
   }, [projectId, project?.activeEnvironment])
 
-  useEffect(() => {
-    const handler = (...args: unknown[]): void => {
-      const data = args[0] as { status: RecorderStatus; error?: string }
-      setStatus(data.status)
-      if (data.status === 'idle' && data.error) {
-        setError({ code: 'UNKNOWN', message: data.error })
-      }
-      if (data.status === 'idle' && !data.error && outputPath) {
-        checkSavedFile()
-      }
+  useSocketEvent<{ status: RecorderStatus; error?: string }>(IPC.RECORDER_STATUS, (data) => {
+    setStatus(data.status)
+    if (data.status === 'idle' && data.error) {
+      setError({ code: 'UNKNOWN', message: data.error })
+      return
     }
-    window.api.on(IPC.RECORDER_STATUS, handler)
-    return () => { window.api.off(IPC.RECORDER_STATUS, handler) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outputPath])
 
-  const checkSavedFile = async (): Promise<void> => {
-    if (!outputPath) return
-    const result = await window.api.invoke<string | null>(IPC.RECORDER_SAVE, { outputPath })
+    if (data.status === 'idle' && outputPath) {
+      void checkSavedFile(outputPath)
+    }
+  })
+
+  const checkSavedFile = async (pathToCheck: string): Promise<void> => {
+    if (!pathToCheck) return
+    const result = await api.invoke<string | null>(IPC.RECORDER_SAVE, { outputPath: pathToCheck })
     const envelope = result as IpcEnvelope<string | null>
     if (envelope.payload) setSavedFile(envelope.payload)
-  }
-
-  const handleBrowse = async (): Promise<void> => {
-    const result = await window.api.invoke<string | null>(IPC.DIALOG_SAVE_FILE, {
-      defaultPath: 'recorded-test.spec.ts',
-      filters: [
-        { name: 'TypeScript', extensions: ['ts'] },
-        { name: 'JavaScript', extensions: ['js'] },
-      ],
-    })
-    const envelope = result as IpcEnvelope<string | null>
-    if (envelope.payload) setOutputPath(envelope.payload)
   }
 
   const handleStart = async (): Promise<void> => {
     setError(null)
     setSavedFile(null)
-    if (!outputPath) {
-      setError({ code: 'INVALID_PATH', message: 'Please select an output file path first using the Browse button.' })
+    if (!outputDirectory || !fileName.trim()) {
+      setError({ code: 'INVALID_PATH', message: 'Choose an output folder and file name before recording.' })
       return
     }
-    const result = await window.api.invoke(IPC.RECORDER_START, {
+    const result = await api.invoke(IPC.RECORDER_START, {
       projectId,
       startUrl: startUrl || undefined,
       outputPath,
@@ -90,7 +106,7 @@ export function RecorderPage(): JSX.Element {
   }
 
   const handleStop = async (): Promise<void> => {
-    await window.api.invoke(IPC.RECORDER_STOP)
+    await api.invoke(IPC.RECORDER_STOP)
   }
 
   return (
@@ -137,19 +153,35 @@ export function RecorderPage(): JSX.Element {
         </div>
 
         <div className="form-group">
-          <label>Output file</label>
+          <label>Output folder</label>
           <div className="path-input">
             <input
               type="text"
-              value={outputPath}
-              onChange={(e) => setOutputPath(e.target.value)}
-              placeholder="Click Browse to select output file..."
+              value={outputDirectory}
+              onChange={(e) => setOutputDirectory(e.target.value)}
+              placeholder="Select a folder for the generated test..."
               disabled={status === 'running'}
             />
-            <button className="btn btn-secondary" onClick={handleBrowse} disabled={status === 'running'}>
+            <button className="btn btn-secondary" onClick={() => setShowFolderPicker(true)} disabled={status === 'running'}>
               Browse
             </button>
           </div>
+        </div>
+
+        <div className="form-group">
+          <label>File name</label>
+          <input
+            type="text"
+            value={fileName}
+            onChange={(e) => setFileName(e.target.value)}
+            placeholder="recorded-test.spec.ts"
+            disabled={status === 'running'}
+          />
+        </div>
+
+        <div className="form-group">
+          <label>Full output path</label>
+          <input type="text" value={outputPath} readOnly />
         </div>
 
         <div className="form-group">
@@ -176,6 +208,18 @@ export function RecorderPage(): JSX.Element {
           )}
         </div>
       </div>
+
+      {showFolderPicker && (
+        <FolderPicker
+          title="Choose Recorder Output Folder"
+          startPath={outputDirectory || project?.rootPath}
+          onClose={() => setShowFolderPicker(false)}
+          onSelect={(selectedPath) => {
+            setOutputDirectory(selectedPath)
+            setShowFolderPicker(false)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -1,0 +1,17 @@
+{
+  "name": "PW Studio",
+  "short_name": "PW Studio",
+  "description": "Local Playwright orchestration studio served from a Node.js web app.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#4361ee",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
