@@ -16,6 +16,7 @@ export const API_ROUTES = {
   PROJECTS_UPDATE_SETTINGS: '/projects/:id/settings',
 
   DIRECTORIES_BROWSE: '/directories/browse',
+  DIALOG_OPEN_DIRECTORY: '/dialogs/open-directory',
 
   HEALTH_GET: '/projects/:id/health',
   HEALTH_REFRESH: '/projects/:id/health/refresh',
