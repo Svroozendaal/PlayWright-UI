@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useParams } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type {
@@ -12,6 +13,7 @@ import { api } from '../api/client'
 
 export function SettingsPage(): JSX.Element {
   const { id: projectId } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [copied, setCopied] = useState(false)
   const [project, setProject] = useState<RegisteredProject | null>(null)
@@ -160,6 +162,20 @@ export function SettingsPage(): JSX.Element {
           <div className="settings-row">
             <span className="settings-label">User data folder</span>
             <span className="settings-value">{appInfo?.userDataPath ?? '...'}</span>
+          </div>
+
+          <div className="settings-row">
+            <span className="settings-label">Visual block library</span>
+            <span className="settings-value">
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() =>
+                  navigate(projectId ? `/settings/block-library?projectId=${encodeURIComponent(projectId)}` : '/settings/block-library')
+                }
+              >
+                Open Block Library
+              </button>
+            </span>
           </div>
         </div>
 

@@ -203,6 +203,50 @@ const channelMap: Record<string, RouteSpec> = {
         id: getRequiredString(payload, 'projectId'),
       }),
   },
+  [IPC.TEST_EDITOR_LOAD]: {
+    method: 'POST',
+    path: API_ROUTES.TEST_EDITOR_LOAD,
+    body: (payload) => payload,
+  },
+  [IPC.TEST_EDITOR_SYNC_CODE]: {
+    method: 'POST',
+    path: API_ROUTES.TEST_EDITOR_SYNC_CODE,
+    body: (payload) => payload,
+  },
+  [IPC.TEST_EDITOR_SAVE]: {
+    method: 'POST',
+    path: API_ROUTES.TEST_EDITOR_SAVE,
+    body: (payload) => payload,
+  },
+  [IPC.TEST_EDITOR_LIBRARY]: {
+    method: 'GET',
+    path: API_ROUTES.TEST_EDITOR_LIBRARY,
+    query: (payload) => ({
+      projectId: typeof payload['projectId'] === 'string' ? payload['projectId'] : undefined,
+    }),
+  },
+  [IPC.BLOCK_LIBRARY_TEMPLATES]: {
+    method: 'GET',
+    path: API_ROUTES.BLOCK_LIBRARY_TEMPLATES,
+  },
+  [IPC.BLOCK_LIBRARY_PROJECT]: {
+    method: 'GET',
+    path: (payload) =>
+      buildPath(API_ROUTES.BLOCK_LIBRARY_PROJECT, { id: getRequiredString(payload, 'projectId') }),
+  },
+  [IPC.BLOCK_LIBRARY_TEMPLATES_SAVE]: {
+    method: 'PUT',
+    path: API_ROUTES.BLOCK_LIBRARY_TEMPLATES,
+    body: (payload) => payload,
+  },
+  [IPC.BLOCK_LIBRARY_PROJECT_SAVE]: {
+    method: 'PUT',
+    path: (payload) =>
+      buildPath(API_ROUTES.BLOCK_LIBRARY_PROJECT, { id: getRequiredString(payload, 'projectId') }),
+    body: (payload) => ({
+      includedTemplateIds: payload['includedTemplateIds'],
+    }),
+  },
   [IPC.RUNS_START]: {
     method: 'POST',
     path: (payload) =>

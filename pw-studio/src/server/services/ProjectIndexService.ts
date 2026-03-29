@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ExplorerNode } from '../../shared/types/ipc'
 import type { PlaywrightConfigService } from './PlaywrightConfigService'
+import { formatParseDiagnostics, parseTestSource } from '../utils/testEditorAst'
 
 export type ParseWarning = {
   filePath: string
@@ -9,7 +10,6 @@ export type ParseWarning = {
 }
 
 const TEST_FILE_PATTERN = /\.(spec|test)\.(ts|js|mjs)$/
-const TEST_CASE_REGEX = /^\s*test\s*\(\s*(['"`])(.*?)\1/gm
 
 export class ProjectIndexService {
   private trees = new Map<string, ExplorerNode[]>()
@@ -132,22 +132,25 @@ function extractTestCases(
 } {
   try {
     const content = fs.readFileSync(filePath, 'utf8')
-    const children: ExplorerNode[] = []
+    const parsed = parseTestSource(content, filePath)
+    const children: ExplorerNode[] = parsed.testCases.map((testCase) => ({
+      id: `${parentId}::${testCase.ordinal}`,
+      name: testCase.title,
+      type: 'testCase',
+      path: filePath,
+      testTitle: testCase.title,
+      testCaseRef: testCase.testCaseRef,
+    }))
 
-    let match: RegExpExecArray | null
-    const regex = new RegExp(TEST_CASE_REGEX.source, TEST_CASE_REGEX.flags)
-    let index = 0
-
-    while ((match = regex.exec(content)) !== null) {
-      const title = match[2] ?? ''
-      children.push({
-        id: `${parentId}::${index}`,
-        name: title,
-        type: 'testCase',
-        path: filePath,
-        testTitle: title,
-      })
-      index++
+    const diagnostics = formatParseDiagnostics(parsed)
+    if (diagnostics.length > 0) {
+      const message = diagnostics.join('; ')
+      warnings.push({ filePath, message })
+      return {
+        children,
+        parseState: 'warning',
+        parseWarning: message,
+      }
     }
 
     return { children, parseState: 'ok' }

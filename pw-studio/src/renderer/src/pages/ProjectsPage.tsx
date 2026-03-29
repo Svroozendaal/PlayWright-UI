@@ -66,6 +66,9 @@ export function ProjectsPage(): JSX.Element {
           <button className="btn btn-secondary" onClick={() => setShowImportPicker(true)}>
             Import Project
           </button>
+          <button className="btn btn-secondary" onClick={() => navigate('/settings/block-library')}>
+            Block Library
+          </button>
         </div>
 
         {projects.length === 0 ? (

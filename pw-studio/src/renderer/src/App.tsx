@@ -9,6 +9,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { EnvironmentsPage } from './pages/EnvironmentsPage'
 import { RecorderPage } from './pages/RecorderPage'
 import { FlakyTestsPage } from './pages/FlakyTestsPage'
+import { BlockLibraryPage } from './pages/BlockLibraryPage'
 import { ProjectLayout } from './components/ProjectLayout'
 import './App.css'
 
@@ -29,6 +30,7 @@ export function App(): JSX.Element {
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/block-library" element={<BlockLibraryPage />} />
       </Routes>
     </BrowserRouter>
   )

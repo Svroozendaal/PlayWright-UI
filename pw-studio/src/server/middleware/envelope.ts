@@ -17,6 +17,7 @@ export const apiEnvelopeSchema = z.object({
 const errorStatusMap: Record<string, number> = {
   [ERROR_CODES.INVALID_INPUT]: 400,
   [ERROR_CODES.INVALID_PATH]: 400,
+  [ERROR_CODES.TEST_CASE_NOT_FOUND]: 404,
   [ERROR_CODES.PROJECT_NOT_FOUND]: 404,
   [ERROR_CODES.RUN_NOT_FOUND]: 404,
   [ERROR_CODES.ENVIRONMENT_NOT_FOUND]: 404,

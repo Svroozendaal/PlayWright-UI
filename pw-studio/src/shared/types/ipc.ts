@@ -27,6 +27,13 @@ export const API_ROUTES = {
   EXPLORER_SET_FILE_POLICY: '/projects/:id/explorer/file-policy',
   EXPLORER_GET_LAST_RESULTS: '/projects/:id/explorer/last-results',
 
+  TEST_EDITOR_LOAD: '/test-editor/load',
+  TEST_EDITOR_SYNC_CODE: '/test-editor/sync-code',
+  TEST_EDITOR_SAVE: '/test-editor/save',
+  TEST_EDITOR_LIBRARY: '/test-editor/library',
+  BLOCK_LIBRARY_TEMPLATES: '/block-library/templates',
+  BLOCK_LIBRARY_PROJECT: '/projects/:id/block-library',
+
   RUNS_START: '/projects/:id/runs',
   RUNS_GET_ACTIVE: '/projects/:id/runs/active',
   RUNS_LIST: '/projects/:id/runs',
@@ -104,6 +111,15 @@ export const IPC = {
   EXPLORER_SET_FILE_POLICY: 'explorer:setFilePolicy',
   EXPLORER_GET_LAST_RESULTS: 'explorer:getLastResults',
 
+  TEST_EDITOR_LOAD: 'testEditor:load',
+  TEST_EDITOR_SYNC_CODE: 'testEditor:syncCode',
+  TEST_EDITOR_SAVE: 'testEditor:save',
+  TEST_EDITOR_LIBRARY: 'testEditor:library',
+  BLOCK_LIBRARY_TEMPLATES: 'blockLibrary:templates',
+  BLOCK_LIBRARY_TEMPLATES_SAVE: 'blockLibrary:templates:save',
+  BLOCK_LIBRARY_PROJECT: 'blockLibrary:project',
+  BLOCK_LIBRARY_PROJECT_SAVE: 'blockLibrary:project:save',
+
   RUNS_START: 'runs:start',
   RUNS_GET_ACTIVE: 'runs:getActive',
   RUNS_LIST: 'runs:list',
@@ -162,6 +178,7 @@ export const ERROR_CODES = {
   RECORDER_ALREADY_RUNNING: 'RECORDER_ALREADY_RUNNING',
   INVALID_PATH: 'INVALID_PATH',
   INVALID_INPUT: 'INVALID_INPUT',
+  TEST_CASE_NOT_FOUND: 'TEST_CASE_NOT_FOUND',
   SERVER_UNAVAILABLE: 'SERVER_UNAVAILABLE',
   UNKNOWN: 'UNKNOWN',
 } as const
@@ -399,6 +416,136 @@ export type ExplorerNode = {
   parseState?: 'ok' | 'warning'
   parseWarning?: string
   testTitle?: string
+  testCaseRef?: TestCaseRef
+}
+
+export type TestCaseRef = {
+  ordinal: number
+  testTitle: string
+}
+
+export type TestEditorMode = 'existing' | 'create'
+
+export type SelectorStrategy = 'role' | 'text' | 'label' | 'test_id' | 'css'
+
+export type SelectorSpec = {
+  strategy: SelectorStrategy
+  value: string
+  name?: string
+}
+
+export type BlockDisplayValueSource =
+  | 'url'
+  | 'value'
+  | 'selector.value'
+  | 'selector.name'
+  | 'code'
+
+export type BlockDisplayConfig = {
+  label: string
+  detailSource: BlockDisplayValueSource
+  quoteDetail?: boolean
+  hideTitle?: boolean
+  separator?: ': ' | ' '
+}
+
+export type RawCodeBlock = {
+  id: string
+  title: string
+  templateId?: string
+  kind: 'raw_code'
+  code: string
+}
+
+export type GotoUrlBlock = {
+  id: string
+  title: string
+  templateId?: string
+  kind: 'goto_url'
+  url: string
+}
+
+export type ClickElementBlock = {
+  id: string
+  title: string
+  templateId?: string
+  kind: 'click_element'
+  selector: SelectorSpec
+}
+
+export type FillFieldBlock = {
+  id: string
+  title: string
+  templateId?: string
+  kind: 'fill_field'
+  selector: SelectorSpec
+  value: string
+}
+
+export type ExpectUrlBlock = {
+  id: string
+  title: string
+  templateId?: string
+  kind: 'expect_url'
+  url: string
+}
+
+export type TestBlock =
+  | RawCodeBlock
+  | GotoUrlBlock
+  | ClickElementBlock
+  | FillFieldBlock
+  | ExpectUrlBlock
+
+export type TestBlockTemplate =
+  | Omit<RawCodeBlock, 'id' | 'title'>
+  | Omit<GotoUrlBlock, 'id' | 'title'>
+  | Omit<ClickElementBlock, 'id' | 'title'>
+  | Omit<FillFieldBlock, 'id' | 'title'>
+  | Omit<ExpectUrlBlock, 'id' | 'title'>
+
+export type BlockTemplate = {
+  id: string
+  name: string
+  description: string
+  category: string
+  block: TestBlockTemplate
+  display?: BlockDisplayConfig
+}
+
+export type ManagedBlockTemplate = BlockTemplate & {
+  builtIn: boolean
+}
+
+export type TestEditorLibraryPayload = {
+  templates: ManagedBlockTemplate[]
+  availableTemplateIds: string[]
+}
+
+export type BlockLibraryProjectState = {
+  templates: ManagedBlockTemplate[]
+  includedTemplateIds: string[]
+  globalTemplatesPath: string
+  projectConfigPath: string | null
+}
+
+export type TestEditorTemplate = {
+  callee: string
+  extraArgs: string[]
+  callbackStyle: 'arrow' | 'function'
+  callbackParams: string
+  callbackAsync: boolean
+}
+
+export type TestEditorDocument = {
+  mode: TestEditorMode
+  filePath: string
+  testTitle: string
+  blocks: TestBlock[]
+  code: string
+  warnings: string[]
+  template: TestEditorTemplate
+  testCaseRef?: TestCaseRef
 }
 
 export type FileReadResult = {

@@ -1,12 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
-import type { IpcEnvelope, ExplorerNode, RunRequest, FileReadResult, TestStatusMap } from '../../../shared/types/ipc'
+import type {
+  FileReadResult,
+  ExplorerNode,
+  IpcEnvelope,
+  RunRequest,
+  TestEditorDocument,
+  TestStatusMap,
+} from '../../../shared/types/ipc'
 import { api } from '../api/client'
 import { useSocketEvent } from '../api/useSocket'
 import { ArtifactPolicyEditor } from '../components/ArtifactPolicyEditor'
 import { CodeEditor } from '../components/CodeEditor'
 import { RunDialog } from '../components/RunDialog'
+import { TestBlockEditor } from '../components/TestBlockEditor'
 
 type ContextMenuState = { x: number; y: number; node: ExplorerNode } | null
 type DetailTab = 'code' | 'info'
@@ -17,6 +25,35 @@ test('', async ({ page }) => {
   //
 })
 `
+
+function findTestCaseNode(
+  nodes: ExplorerNode[],
+  filePath: string,
+  ordinal: number | undefined
+): ExplorerNode | null {
+  if (ordinal === undefined) {
+    return null
+  }
+
+  for (const node of nodes) {
+    if (
+      node.type === 'testCase' &&
+      node.path === filePath &&
+      node.testCaseRef?.ordinal === ordinal
+    ) {
+      return node
+    }
+
+    if (node.children) {
+      const found = findTestCaseNode(node.children, filePath, ordinal)
+      if (found) {
+        return found
+      }
+    }
+  }
+
+  return null
+}
 
 function nodeIcon(node: ExplorerNode, expanded: boolean): string {
   switch (node.type) {
@@ -67,6 +104,7 @@ export function ExplorerPage(): JSX.Element {
   const [runDialog, setRunDialog] = useState<{
     targetPath?: string; target?: string; testTitleFilter?: string
   } | null>(null)
+  const [createTestFilePath, setCreateTestFilePath] = useState<string | null>(null)
 
   // Code viewer state
   const [detailTab, setDetailTab] = useState<DetailTab>('code')
@@ -83,12 +121,17 @@ export function ExplorerPage(): JSX.Element {
 
   const contextMenuRef = useRef<HTMLDivElement>(null)
 
-  const fetchTree = useCallback(async () => {
-    if (!projectId) return
+  const fetchTree = useCallback(async (): Promise<ExplorerNode[] | null> => {
+    if (!projectId) return null
     const result = await api.invoke<ExplorerNode[]>(IPC.EXPLORER_GET_TREE, { projectId })
     const envelope = result as IpcEnvelope<ExplorerNode[]>
-    if (envelope.payload) setTree(envelope.payload)
+    if (envelope.payload) {
+      setTree(envelope.payload)
+      setLoading(false)
+      return envelope.payload
+    }
     setLoading(false)
+    return null
   }, [projectId])
 
   const fetchLastResults = useCallback(async () => {
@@ -249,6 +292,34 @@ export function ExplorerPage(): JSX.Element {
     setLoading(false)
   }
 
+  const openCreateTestEditor = (node: ExplorerNode): void => {
+    setSelectedNode(node)
+    setCreateTestFilePath(node.path)
+    setDetailTab('code')
+  }
+
+  const handleTestEditorSaved = async (savedDocument: TestEditorDocument): Promise<void> => {
+    if (!projectId) {
+      return
+    }
+
+    setCreateTestFilePath(null)
+    await api.invoke(IPC.EXPLORER_REFRESH, { projectId })
+    const nextTree = await fetchTree()
+    if (!nextTree) {
+      return
+    }
+
+    const nextNode =
+      savedDocument.testCaseRef
+        ? findTestCaseNode(nextTree, savedDocument.filePath, savedDocument.testCaseRef.ordinal)
+        : null
+
+    if (nextNode) {
+      setSelectedNode(nextNode)
+    }
+  }
+
   // Filter tree nodes
   const filterTree = (nodes: ExplorerNode[]): ExplorerNode[] => {
     if (!searchFilter) return nodes
@@ -282,6 +353,7 @@ export function ExplorerPage(): JSX.Element {
           onClick={() => {
             if (isExpandable) toggleExpand(node.id)
             setSelectedNode(node)
+            setCreateTestFilePath(null)
             if (node.type === 'testFile' || node.type === 'file') setDetailTab('code')
           }}
           onContextMenu={(e) => handleContextMenu(e, node)}
@@ -375,7 +447,35 @@ export function ExplorerPage(): JSX.Element {
       <div className="explorer-detail-panel">
         {selectedNode && projectId ? (
           <div className="detail-content">
-            {(selectedNode.type === 'testFile' || selectedNode.type === 'file') ? (
+            {selectedNode.type === 'testCase' ? (
+              selectedNode.testCaseRef ? (
+                <TestBlockEditor
+                  projectId={projectId}
+                  mode="existing"
+                  filePath={selectedNode.path}
+                  testCaseRef={selectedNode.testCaseRef}
+                  onRun={() => void handleQuickRun(selectedNode)}
+                  onRunWithOptions={() => {
+                    setRunDialog({ targetPath: selectedNode.path, testTitleFilter: selectedNode.testTitle })
+                  }}
+                  onSaved={(savedDocument) => {
+                    void handleTestEditorSaved(savedDocument)
+                  }}
+                />
+              ) : (
+                <div className="detail-warning">This test could not be opened in the visual editor because it has no stable test reference yet.</div>
+              )
+            ) : selectedNode.type === 'testFile' && createTestFilePath === selectedNode.path ? (
+              <TestBlockEditor
+                projectId={projectId}
+                mode="create"
+                filePath={selectedNode.path}
+                onCancelCreate={() => setCreateTestFilePath(null)}
+                onSaved={(savedDocument) => {
+                  void handleTestEditorSaved(savedDocument)
+                }}
+              />
+            ) : (selectedNode.type === 'testFile' || selectedNode.type === 'file') ? (
               <>
                 <div className="detail-header">
                   <div className="detail-tabs">
@@ -391,6 +491,11 @@ export function ExplorerPage(): JSX.Element {
                       {selectedNode.type === 'testFile' && (
                         <button className="btn btn-primary btn-sm" onClick={() => handleQuickRun(selectedNode)}>
                           {'\u25B6'} Run File
+                        </button>
+                      )}
+                      {selectedNode.type === 'testFile' && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => openCreateTestEditor(selectedNode)}>
+                          New Test With Blocks
                         </button>
                       )}
                       {!isEditing ? (
@@ -454,22 +559,6 @@ export function ExplorerPage(): JSX.Element {
                   </div>
                 )}
               </>
-            ) : selectedNode.type === 'testCase' ? (
-              <div className="detail-file-info">
-                <h3>{selectedNode.testTitle}</h3>
-                <p>{selectedNode.path}</p>
-                <p style={{ marginTop: 4, color: '#94a3b8' }}>Test Case</p>
-                <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
-                  <button className="btn btn-primary btn-sm" onClick={() => handleQuickRun(selectedNode)}>
-                    {'\u25B6'} Run Test
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => {
-                    setRunDialog({ targetPath: selectedNode.path, testTitleFilter: selectedNode.testTitle })
-                  }}>
-                    Run with Options...
-                  </button>
-                </div>
-              </div>
             ) : (
               <div className="detail-file-info">
                 <h3>{selectedNode.name}</h3>
@@ -534,11 +623,20 @@ export function ExplorerPage(): JSX.Element {
               <button className="context-menu-item" onClick={() => {
                 setContextMenu(null)
                 setSelectedNode(contextMenu.node)
+                setCreateTestFilePath(null)
                 setDetailTab('code')
                 setIsEditing(true)
               }}>
                 Edit file
               </button>
+              {contextMenu.node.type === 'testFile' && (
+                <button className="context-menu-item" onClick={() => {
+                  setContextMenu(null)
+                  openCreateTestEditor(contextMenu.node)
+                }}>
+                  New test with blocks
+                </button>
+              )}
             </>
           )}
           {contextMenu.node.type === 'testCase' && (

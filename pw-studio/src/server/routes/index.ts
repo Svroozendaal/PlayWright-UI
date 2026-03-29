@@ -16,6 +16,8 @@ import { flakyRoutes } from './flaky'
 import { comparisonRoutes } from './comparison'
 import { dashboardRoutes } from './dashboard'
 import { settingsRoutes } from './settings'
+import { testEditorRoutes } from './testEditor'
+import { blockLibraryRoutes } from './blockLibrary'
 
 export const allRoutes: RouteDefinition[] = [
   ...projectRoutes,
@@ -32,6 +34,8 @@ export const allRoutes: RouteDefinition[] = [
   ...comparisonRoutes,
   ...dashboardRoutes,
   ...settingsRoutes,
+  ...testEditorRoutes,
+  ...blockLibraryRoutes,
 ]
 
 export function registerAllRoutes(app: Express | Router, services: ServiceContainer): RouteDefinition[] {

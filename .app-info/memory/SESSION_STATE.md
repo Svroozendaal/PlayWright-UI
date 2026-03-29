@@ -11,9 +11,9 @@ OPEN_BLOCKERS: [none or details]
 
 ## LIVE_LOG
 
-CURRENT_SCOPE: Electron-to-web migration for PW Studio, with docs, runtime cutover, packaging, and verification completed in the working tree.
-ACTIVE_AGENT: Developer
-LAST_HANDOFF: Runtime migration completed on 2026-03-28 with successful typecheck, build, server smoke test, and bundled-runtime smoke test.
+CURRENT_SCOPE: Collapsible project navigation for the PW Studio web UI.
+ACTIVE_AGENT: Designer
+LAST_HANDOFF: Sidebar collapse update completed on 2026-03-29 with successful typecheck and production build.
 OPEN_BLOCKERS: none
 
 ## HANDOFF - Developer - 2026-03-28
@@ -26,4 +26,10 @@ BLOCKERS: none
 STATUS: COMPLETE
 NEXT_AGENT: Developer
 SUMMARY: Recorder validation found that recordings were defaulting to the project root instead of the Playwright `testDir`, which made successful files appear missing from Explorer. The recorder now defaults to `testDir`, and the Playwright config reader now falls back correctly for `.ts` configs so browser project names surface in the UI again.
+BLOCKERS: none
+
+## HANDOFF - Designer - 2026-03-29
+STATUS: COMPLETE
+NEXT_AGENT: none
+SUMMARY: The project sidebar now supports a persistent collapsed state that reduces navigation to icon-only buttons while preserving active states, health visibility, settings access, and the back-to-projects action.
 BLOCKERS: none

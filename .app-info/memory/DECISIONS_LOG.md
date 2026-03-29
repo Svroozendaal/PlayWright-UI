@@ -53,3 +53,9 @@ CONTEXT: The dynamic Playwright config reader silently returned defaults when it
 DECISION: Treat dynamic import failure as a real failure so the reader falls back to regex parsing instead of emitting default values under the `config` read path.
 RATIONALE: This preserves configured browser project names in the UI and avoids false confidence that the config was fully evaluated.
 ALTERNATIVES_REJECTED: Keep the silent fallback; remove dynamic import support entirely and rely only on regex parsing.
+
+## DECISION - UX-008 - 2026-03-29
+CONTEXT: Project-scoped navigation took a fixed 220px rail and always showed labels, which reduced available workspace on content-heavy routes such as Explorer and Runs.
+DECISION: Add a user-toggleable collapsed sidebar mode that reduces the rail to icon-only navigation and persist the preference in browser `localStorage`.
+RATIONALE: This keeps the existing information architecture intact while giving users a faster way to reclaim horizontal space without losing route discoverability or footer actions.
+ALTERNATIVES_REJECTED: Leave the sidebar permanently expanded; auto-collapse only at narrow breakpoints; replace the rail with a temporary drawer.

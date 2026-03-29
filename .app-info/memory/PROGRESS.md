@@ -29,3 +29,9 @@ SCOPE: Recorder follow-up fixes and broader post-migration smoke validation.
 FILES_CHANGED: `pw-studio/src/renderer/src/pages/RecorderPage.tsx`, `pw-studio/src/renderer/src/components/RunDialog.tsx`, `pw-studio/src/renderer/src/pages/SettingsPage.tsx`, `pw-studio/src/renderer/src/App.css`, `pw-studio/src/server/routes/health.ts`, `pw-studio/src/server/utils/playwrightConfigReader.ts`, `pw-studio/src/shared/types/ipc.ts`.
 VALIDATION: `npm run typecheck`, `npm run build`, live API smoke tests against `/api/projects`, `/api/projects/:id/config`, `/api/projects/:id/explorer/tree`, headless Playwright UI smoke across the main routes, recorder-page assertion that the default output folder resolves to the sample project's `tests/` directory, and `npx playwright test tests/smoke/homepage.spec.ts --reporter=line` in the sample project.
 NOTES: The recorder now defaults to the resolved Playwright `testDir` so generated recordings land in the indexed test tree. During validation an additional config-reader defect was found and fixed: `.ts` configs were incorrectly reported as dynamically loaded defaults, which hid configured browser project names from the UI.
+
+## PROGRESS_ENTRY - 2026-03-29
+SCOPE: Collapsible project navigation for the PW Studio web app.
+FILES_CHANGED: `pw-studio/src/renderer/src/components/Sidebar.tsx`, `pw-studio/src/renderer/src/App.css`, `.app-info/memory/SESSION_STATE.md`, `.app-info/memory/DECISIONS_LOG.md`, `.app-info/memory/PROGRESS.md`.
+VALIDATION: `npm run typecheck`, `npm run build`.
+NOTES: The project sidebar now supports a persistent icon-only collapsed state, keeps settings and back navigation usable in the compact rail, and preserves the active run indicator in both layouts.
