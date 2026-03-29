@@ -4,9 +4,16 @@ import crypto from 'crypto'
 import type { ChildProcess } from 'child_process'
 import type Database from 'better-sqlite3'
 import { ERROR_CODES, WS_EVENTS } from '../../shared/types/ipc'
-import type { RunRequest, RunRecord, TestResultRecord, LogEvent } from '../../shared/types/ipc'
+import type {
+  RunRequest,
+  RunRecord,
+  RunStatus,
+  TestResultRecord,
+  LogEvent,
+} from '../../shared/types/ipc'
 import { spawnPlaywright } from '../utils/playwrightBinary'
-import { buildCommand, buildEnvVars } from './CommandBuilder'
+import { createRunConfigOverride } from '../utils/playwrightConfigOverride'
+import { buildCommand, buildEnvVars, normalizeTargetPathForPlaywright } from './CommandBuilder'
 import { parseJsonReport, determineOutcome } from './RunResultParser'
 import type { FlakyTrackingService } from './FlakyTrackingService'
 import { ApiRouteError } from '../middleware/envelope'
@@ -39,16 +46,18 @@ export class RunService {
     const runId = crypto.randomUUID()
     const now = new Date().toISOString()
     const runDir = path.join(rootPath, '.artifacts', 'runs', runId)
+    const reportDir = path.join(rootPath, '.artifacts', 'reports', runId)
 
     fs.mkdirSync(runDir, { recursive: true })
-    fs.mkdirSync(path.join(runDir, 'traces'), { recursive: true })
-    fs.mkdirSync(path.join(runDir, 'screenshots'), { recursive: true })
-    fs.mkdirSync(path.join(runDir, 'videos'), { recursive: true })
-
     const logPath = path.join(runDir, 'log.txt')
-    fs.writeFileSync(logPath, '')
+    this.ensureLogFile(logPath)
 
-    const command = buildCommand(request, runDir)
+    const overrideConfigPath = createRunConfigOverride(rootPath, runId, runDir, reportDir) ?? undefined
+    const commandRequest: RunRequest = {
+      ...request,
+      targetPath: normalizeTargetPathForPlaywright(rootPath, request.targetPath),
+    }
+    const command = buildCommand(commandRequest, runDir, undefined, overrideConfigPath)
     const envVars = buildEnvVars(request)
 
     this.db
@@ -74,6 +83,7 @@ export class RunService {
     this.activeRunId = runId
     const proc = spawnPlaywright(command, rootPath, envVars)
     this.activeProcess = proc
+    let finalized = false
 
     proc.stdout?.setEncoding('utf8')
     proc.stderr?.setEncoding('utf8')
@@ -81,54 +91,27 @@ export class RunService {
     this.db.prepare("UPDATE runs SET status = 'running' WHERE id = ?").run(runId)
     this.publish(WS_EVENTS.RUNS_STATUS_CHANGED, { runId, status: 'running' })
 
-    proc.stdout?.on('data', (chunk: string) => {
-      for (const line of chunk.split(/\r?\n/)) {
-        if (!line) {
-          continue
-        }
-
-        fs.appendFileSync(logPath, `${line}\n`)
-        if (request.streamLogs) {
-          const event: LogEvent = {
-            runId,
-            line,
-            timestamp: new Date().toISOString(),
-            source: 'stdout',
-          }
-          this.publish(WS_EVENTS.RUNS_LOG_EVENT, event)
-        }
+    const finalizeRun = (exitCode: number | null, forcedOutcome?: RunStatus): void => {
+      if (finalized) {
+        return
       }
-    })
+      finalized = true
 
-    proc.stderr?.on('data', (chunk: string) => {
-      for (const line of chunk.split(/\r?\n/)) {
-        if (!line) {
-          continue
-        }
-
-        fs.appendFileSync(logPath, `[stderr] ${line}\n`)
-        if (request.streamLogs) {
-          const event: LogEvent = {
-            runId,
-            line,
-            timestamp: new Date().toISOString(),
-            source: 'stderr',
-          }
-          this.publish(WS_EVENTS.RUNS_LOG_EVENT, event)
-        }
-      }
-    })
-
-    proc.on('close', (exitCode: number | null) => {
       this.activeProcess = null
       this.activeRunId = null
 
       const resultsPath = path.join(runDir, 'results.json')
-      const reportPath = path.join(runDir, 'report', 'index.html')
+      const reportPath = path.join(reportDir, 'index.html')
       const finishedAt = new Date().toISOString()
-      const outcome = determineOutcome(exitCode, resultsPath)
+      const currentRun = this.getRun(runId)
+      const existingStatus = currentRun?.status
+      let outcome: RunStatus = forcedOutcome ?? determineOutcome(exitCode, resultsPath)
 
-      if (outcome !== 'config-error' && fs.existsSync(resultsPath)) {
+      if (existingStatus === 'cancelled') {
+        outcome = 'cancelled'
+      }
+
+      if (outcome !== 'config-error' && outcome !== 'cancelled' && fs.existsSync(resultsPath)) {
         const testResults = parseJsonReport(resultsPath, runId)
         this.storeTestResults(testResults)
 
@@ -155,7 +138,62 @@ export class RunService {
           runId
         )
 
+      if (overrideConfigPath) {
+        try {
+          fs.unlinkSync(overrideConfigPath)
+        } catch {
+          // Ignore cleanup failures for generated config overrides.
+        }
+      }
+
       this.publish(WS_EVENTS.RUNS_STATUS_CHANGED, { runId, status: outcome, finishedAt })
+    }
+
+    proc.stdout?.on('data', (chunk: string) => {
+      for (const line of chunk.split(/\r?\n/)) {
+        if (!line) {
+          continue
+        }
+
+        this.appendLogLine(logPath, line)
+        if (request.streamLogs) {
+          const event: LogEvent = {
+            runId,
+            line,
+            timestamp: new Date().toISOString(),
+            source: 'stdout',
+          }
+          this.publish(WS_EVENTS.RUNS_LOG_EVENT, event)
+        }
+      }
+    })
+
+    proc.stderr?.on('data', (chunk: string) => {
+      for (const line of chunk.split(/\r?\n/)) {
+        if (!line) {
+          continue
+        }
+
+        this.appendLogLine(logPath, `[stderr] ${line}`)
+        if (request.streamLogs) {
+          const event: LogEvent = {
+            runId,
+            line,
+            timestamp: new Date().toISOString(),
+            source: 'stderr',
+          }
+          this.publish(WS_EVENTS.RUNS_LOG_EVENT, event)
+        }
+      }
+    })
+
+    proc.on('error', (error: Error) => {
+      this.appendLogLine(logPath, `[pw-studio] Failed to start run: ${error.message}`)
+      finalizeRun(null, 'config-error')
+    })
+
+    proc.on('close', (exitCode: number | null) => {
+      finalizeRun(exitCode)
     })
 
     return runId
@@ -237,6 +275,22 @@ export class RunService {
         )
       }
     })()
+  }
+
+  private ensureLogFile(logPath: string): void {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true })
+    if (!fs.existsSync(logPath)) {
+      fs.writeFileSync(logPath, '')
+    }
+  }
+
+  private appendLogLine(logPath: string, line: string): void {
+    try {
+      this.ensureLogFile(logPath)
+      fs.appendFileSync(logPath, `${line}\n`)
+    } catch (error) {
+      console.error('[pw-studio] failed to append run log', error)
+    }
   }
 }
 

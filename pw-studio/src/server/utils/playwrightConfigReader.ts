@@ -105,6 +105,10 @@ for (const f of configFiles) {
   } catch {}
 }
 
+if (!config) {
+  throw new Error('Unable to dynamically import Playwright config');
+}
+
 const testDir = path.resolve(config?.testDir ?? 'tests');
 const outputDir = path.resolve(config?.outputDir ?? 'test-results');
 const projects = (config?.projects ?? []).map(p => p.name).filter(Boolean);

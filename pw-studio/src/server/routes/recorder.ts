@@ -15,6 +15,29 @@ const recorderSaveBodySchema = z.object({
   outputPath: z.string().min(1),
 })
 
+const recorderExtractionSchema = z.object({
+  kind: z.enum(['selector', 'value', 'url']),
+  name: z.string(),
+  value: z.string(),
+  occurrences: z.number().int().nonnegative(),
+})
+
+const recorderSuggestionSchema = z.object({
+  kind: z.enum(['structure', 'selector', 'cleanup', 'maintainability']),
+  title: z.string(),
+  detail: z.string(),
+})
+
+const recorderSaveResultSchema = z.object({
+  outputPath: z.string(),
+  testTitle: z.string(),
+  transformed: z.boolean(),
+  actionCount: z.number().int().nonnegative(),
+  appliedChanges: z.array(z.string()),
+  extractions: z.array(recorderExtractionSchema),
+  suggestions: z.array(recorderSuggestionSchema),
+})
+
 export const recorderRoutes: RouteDefinition[] = [
   {
     method: 'post',
@@ -63,9 +86,12 @@ export const recorderRoutes: RouteDefinition[] = [
     method: 'post',
     path: API_ROUTES.RECORDER_SAVE,
     tags: ['Recorder'],
-    summary: 'Check whether the generated recorder file exists',
+    summary: 'Get refined recorder output details for a generated file',
     operationId: 'getRecorderOutputFile',
-    schemas: { body: recorderSaveBodySchema },
+    schemas: {
+      body: recorderSaveBodySchema,
+      response: recorderSaveResultSchema.nullable(),
+    },
     handler: ({ services, body }) => services.recorder.getOutputFile((body as { outputPath: string }).outputPath),
   },
 ]

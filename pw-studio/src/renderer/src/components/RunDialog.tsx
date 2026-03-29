@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
 import { IPC } from '../../../shared/types/ipc'
-import type { IpcEnvelope, RunRequest, BrowserSelection, Environment, RegisteredProject } from '../../../shared/types/ipc'
+import type {
+  IpcEnvelope,
+  RunRequest,
+  BrowserSelection,
+  Environment,
+  ProjectConfigSummary,
+  RegisteredProject,
+} from '../../../shared/types/ipc'
 import { api } from '../api/client'
 import { ErrorBanner } from './ErrorBanner'
 
@@ -36,8 +43,8 @@ export function RunDialog({
 
   useEffect(() => {
     const fetchConfig = async (): Promise<void> => {
-      const result = await api.invoke<{ projects: string[] }>(IPC.HEALTH_GET_CONFIG, { projectId })
-      const envelope = result as IpcEnvelope<{ projects: string[] }>
+      const result = await api.invoke<ProjectConfigSummary>(IPC.HEALTH_GET_CONFIG, { projectId })
+      const envelope = result as IpcEnvelope<ProjectConfigSummary>
       if (envelope.payload?.projects) {
         setProjects(envelope.payload.projects)
       }

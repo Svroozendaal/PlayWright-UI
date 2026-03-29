@@ -15,7 +15,7 @@ type PlaywrightJsonSpec = {
 }
 
 type PlaywrightJsonTest = {
-  title: string
+  title?: string
   results: PlaywrightJsonResult[]
 }
 
@@ -60,11 +60,12 @@ function collectFromSuite(suite: PlaywrightJsonSuite, runId: string, results: Te
 
         const status = mapStatus(lastResult.status)
         const attachments = lastResult.attachments ?? []
+        const testTitle = spec.title || test.title || suite.title || 'Unnamed test'
 
         results.push({
           id: crypto.randomUUID(),
           runId,
-          testTitle: test.title,
+          testTitle,
           status,
           duration: lastResult.duration,
           errorMessage: lastResult.error?.message ?? null,
@@ -72,7 +73,7 @@ function collectFromSuite(suite: PlaywrightJsonSuite, runId: string, results: Te
           screenshotPath: findAttachment(attachments, 'screenshot'),
           videoPath: findAttachment(attachments, 'video'),
           retryCount: lastResult.retry,
-          safeTitleForGrep: escapeForGrep(test.title),
+          safeTitleForGrep: escapeForGrep(testTitle),
         })
       }
     }

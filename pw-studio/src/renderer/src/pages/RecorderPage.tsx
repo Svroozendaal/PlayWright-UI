@@ -1,7 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
-import type { IpcEnvelope, RecorderStatus, Environment } from '../../../shared/types/ipc'
+import type {
+  CodegenExtraction,
+  CodegenSuggestion,
+  Environment,
+  IpcEnvelope,
+  ProjectConfigSummary,
+  RecorderSaveResult,
+  RecorderStatus,
+  RecorderStatusEvent,
+} from '../../../shared/types/ipc'
 import { api } from '../api/client'
 import { useSocketEvent } from '../api/useSocket'
 import { ErrorBanner } from '../components/ErrorBanner'
@@ -38,7 +47,7 @@ export function RecorderPage(): JSX.Element {
   const [fileName, setFileName] = useState('recorded-test.spec.ts')
   const [browser, setBrowser] = useState('chromium')
   const [error, setError] = useState<{ code: string; message: string } | null>(null)
-  const [savedFile, setSavedFile] = useState<string | null>(null)
+  const [savedResult, setSavedResult] = useState<RecorderSaveResult | null>(null)
   const [showFolderPicker, setShowFolderPicker] = useState(false)
   const outputPath = joinPath(outputDirectory.trim(), fileName.trim())
 
@@ -52,10 +61,35 @@ export function RecorderPage(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    if (!outputDirectory && project?.rootPath) {
-      setOutputDirectory(project.rootPath)
+    if (!projectId || !project?.rootPath) {
+      return
     }
-  }, [outputDirectory, project?.rootPath])
+
+    let cancelled = false
+
+    const loadPreferredOutputDirectory = async (): Promise<void> => {
+      const result = await api.invoke<ProjectConfigSummary>(IPC.HEALTH_GET_CONFIG, { projectId })
+      const envelope = result as IpcEnvelope<ProjectConfigSummary>
+      if (cancelled) {
+        return
+      }
+
+      const preferredDirectory = envelope.payload?.testDir || project.rootPath
+      setOutputDirectory((current) => {
+        if (!current || current === project.rootPath) {
+          return preferredDirectory
+        }
+
+        return current
+      })
+    }
+
+    void loadPreferredOutputDirectory()
+
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, project?.rootPath])
 
   // Pre-fill start URL from active environment's baseURL
   useEffect(() => {
@@ -69,10 +103,15 @@ export function RecorderPage(): JSX.Element {
     void loadEnvUrl()
   }, [projectId, project?.activeEnvironment])
 
-  useSocketEvent<{ status: RecorderStatus; error?: string }>(IPC.RECORDER_STATUS, (data) => {
+  useSocketEvent<RecorderStatusEvent>(IPC.RECORDER_STATUS, (data) => {
     setStatus(data.status)
     if (data.status === 'idle' && data.error) {
       setError({ code: 'UNKNOWN', message: data.error })
+      return
+    }
+
+    if (data.status === 'idle' && data.result) {
+      setSavedResult(data.result)
       return
     }
 
@@ -83,14 +122,14 @@ export function RecorderPage(): JSX.Element {
 
   const checkSavedFile = async (pathToCheck: string): Promise<void> => {
     if (!pathToCheck) return
-    const result = await api.invoke<string | null>(IPC.RECORDER_SAVE, { outputPath: pathToCheck })
-    const envelope = result as IpcEnvelope<string | null>
-    if (envelope.payload) setSavedFile(envelope.payload)
+    const result = await api.invoke<RecorderSaveResult | null>(IPC.RECORDER_SAVE, { outputPath: pathToCheck })
+    const envelope = result as IpcEnvelope<RecorderSaveResult | null>
+    if (envelope.payload) setSavedResult(envelope.payload)
   }
 
   const handleStart = async (): Promise<void> => {
     setError(null)
-    setSavedFile(null)
+    setSavedResult(null)
     if (!outputDirectory || !fileName.trim()) {
       setError({ code: 'INVALID_PATH', message: 'Choose an output folder and file name before recording.' })
       return
@@ -109,6 +148,13 @@ export function RecorderPage(): JSX.Element {
     await api.invoke(IPC.RECORDER_STOP)
   }
 
+  const selectorExtractions = savedResult?.extractions.filter(
+    (extraction) => extraction.kind === 'selector'
+  ) ?? []
+  const valueExtractions = savedResult?.extractions.filter(
+    (extraction) => extraction.kind !== 'selector'
+  ) ?? []
+
   return (
     <div className="page-inner">
       <div className="page-header">
@@ -122,12 +168,11 @@ export function RecorderPage(): JSX.Element {
 
       {error && <ErrorBanner code={error.code} message={error.message} />}
 
-      {savedFile && (
+      {savedResult && (
         <div className="recorder-saved-banner">
-          Test recorded successfully: <code>{savedFile}</code>
+          Test recorded successfully: <code>{savedResult.outputPath}</code>
           <button
-            className="btn btn-primary btn-sm"
-            style={{ marginLeft: 12 }}
+            className="btn btn-primary btn-sm recorder-saved-banner-action"
             onClick={() => navigate(`/project/${projectId}/explorer`)}
           >
             Open in Explorer
@@ -135,10 +180,72 @@ export function RecorderPage(): JSX.Element {
         </div>
       )}
 
+      {savedResult && (
+        <div className="settings-section">
+          <h3>Recorder Output Review</h3>
+          <div className="recorder-summary-grid">
+            <div className="recorder-summary-card">
+              <span className="recorder-summary-value">{savedResult.testTitle}</span>
+              <span className="recorder-summary-label">Test title</span>
+            </div>
+            <div className="recorder-summary-card">
+              <span className="recorder-summary-value">{savedResult.actionCount}</span>
+              <span className="recorder-summary-label">Awaited actions</span>
+            </div>
+            <div className="recorder-summary-card">
+              <span className="recorder-summary-value">{selectorExtractions.length}</span>
+              <span className="recorder-summary-label">Selector constants</span>
+            </div>
+            <div className="recorder-summary-card">
+              <span className="recorder-summary-value">{valueExtractions.length}</span>
+              <span className="recorder-summary-label">Value constants</span>
+            </div>
+          </div>
+
+          {savedResult.appliedChanges.length > 0 && (
+            <div className="recorder-review-block">
+              <h4>Applied improvements</h4>
+              <div className="recorder-chip-list">
+                {savedResult.appliedChanges.map((change) => (
+                  <span key={change} className="recorder-chip">
+                    {change}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {savedResult.extractions.length > 0 && (
+            <div className="recorder-review-block">
+              <h4>Promoted constants</h4>
+              <div className="recorder-extraction-list">
+                {savedResult.extractions.map((extraction) => (
+                  <RecorderExtractionRow key={`${extraction.kind}-${extraction.name}`} extraction={extraction} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {savedResult.suggestions.length > 0 && (
+            <div className="recorder-review-block">
+              <h4>Suggested next edits</h4>
+              <div className="recorder-suggestion-list">
+                {savedResult.suggestions.map((suggestion) => (
+                  <RecorderSuggestionCard
+                    key={`${suggestion.kind}-${suggestion.title}`}
+                    suggestion={suggestion}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="settings-section">
         <h3>Record a new test</h3>
-        <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
-          Playwright Codegen will open a browser. Interact with your app and close the browser when done — the test will be saved automatically.
+        <p className="recorder-intro-copy">
+          Playwright Codegen will open a browser. Interact with your app and close the browser when done, then the test will be saved automatically.
         </p>
 
         <div className="form-group">
@@ -154,6 +261,9 @@ export function RecorderPage(): JSX.Element {
 
         <div className="form-group">
           <label>Output folder</label>
+          <div className="recorder-field-hint">
+            The default path follows your Playwright <code>testDir</code> so new recordings appear in Explorer immediately.
+          </div>
           <div className="path-input">
             <input
               type="text"
@@ -220,6 +330,36 @@ export function RecorderPage(): JSX.Element {
           }}
         />
       )}
+    </div>
+  )
+}
+
+function RecorderSuggestionCard({
+  suggestion,
+}: {
+  suggestion: CodegenSuggestion
+}): JSX.Element {
+  return (
+    <div className={`recorder-suggestion-card recorder-suggestion-${suggestion.kind}`}>
+      <div className="recorder-suggestion-title">{suggestion.title}</div>
+      <div className="recorder-suggestion-detail">{suggestion.detail}</div>
+    </div>
+  )
+}
+
+function RecorderExtractionRow({
+  extraction,
+}: {
+  extraction: CodegenExtraction
+}): JSX.Element {
+  return (
+    <div className="recorder-extraction-row">
+      <div className="recorder-extraction-meta">
+        <code>{extraction.name}</code>
+        <span className="recorder-extraction-kind">{extraction.kind}</span>
+      </div>
+      <div className="recorder-extraction-value">{extraction.value}</div>
+      <div className="recorder-extraction-count">{extraction.occurrences}x</div>
     </div>
   )
 }

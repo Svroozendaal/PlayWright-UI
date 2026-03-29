@@ -41,3 +41,15 @@ CONTEXT: Electron save/open dialogs are no longer available in the browser runti
 DECISION: Replace native dialogs with an in-app folder picker backed by `/api/directories/browse`, and handle recorder output as folder selection plus explicit file name input.
 RATIONALE: This keeps the app local-first and browser-safe, works across operating systems, and preserves the recorder workflow without requiring privileged browser APIs.
 ALTERNATIVES_REJECTED: Add a desktop-only file-system API dependency; restrict recorder output to a hard-coded project-relative path.
+
+## DECISION - UX-006 - 2026-03-28
+CONTEXT: The recorder page defaulted the output folder to the project root, while Explorer and file watching intentionally index the resolved Playwright `testDir`.
+DECISION: Resolve the preferred recorder output folder from the Playwright config summary and default the recorder UI to `testDir`, with the project root retained only as a fallback when config discovery fails.
+RATIONALE: This keeps generated recordings inside the indexed test tree so new files appear in Explorer immediately and behave like the rest of the test suite.
+ALTERNATIVES_REJECTED: Expand Explorer to index the entire project root; leave the root default and rely on manual folder changes.
+
+## DECISION - ARCH-007 - 2026-03-28
+CONTEXT: The dynamic Playwright config reader silently returned defaults when it failed to import a config file, which masked configured browser project names for `.ts` configs.
+DECISION: Treat dynamic import failure as a real failure so the reader falls back to regex parsing instead of emitting default values under the `config` read path.
+RATIONALE: This preserves configured browser project names in the UI and avoids false confidence that the config was fully evaluated.
+ALTERNATIVES_REJECTED: Keep the silent fallback; remove dynamic import support entirely and rely only on regex parsing.

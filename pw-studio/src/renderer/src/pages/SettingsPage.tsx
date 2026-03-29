@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
-import type { IpcEnvelope, AppInfo, RegisteredProject, Environment } from '../../../shared/types/ipc'
+import type {
+  IpcEnvelope,
+  AppInfo,
+  RegisteredProject,
+  Environment,
+  ProjectConfigSummary,
+} from '../../../shared/types/ipc'
 import { api } from '../api/client'
 
 export function SettingsPage(): JSX.Element {
@@ -39,8 +45,8 @@ export function SettingsPage(): JSX.Element {
     }
 
     const loadBrowsers = async (): Promise<void> => {
-      const result = await api.invoke<{ projects: string[] }>(IPC.HEALTH_GET_CONFIG, { projectId })
-      const envelope = result as IpcEnvelope<{ projects: string[] }>
+      const result = await api.invoke<ProjectConfigSummary>(IPC.HEALTH_GET_CONFIG, { projectId })
+      const envelope = result as IpcEnvelope<ProjectConfigSummary>
       if (envelope.payload?.projects) setBrowserProjects(envelope.payload.projects)
     }
 

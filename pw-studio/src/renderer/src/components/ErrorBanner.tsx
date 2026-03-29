@@ -50,6 +50,10 @@ const ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
     title: 'Invalid path',
     description: 'The specified file or directory path is not valid.',
   },
+  [ERROR_CODES.SERVER_UNAVAILABLE]: {
+    title: 'PW Studio server unavailable',
+    description: 'The local backend stopped responding. Restart the app or retry the action.',
+  },
 }
 
 export function ErrorBanner({ code, message, onAction, actionLabel }: ErrorBannerProps): JSX.Element {

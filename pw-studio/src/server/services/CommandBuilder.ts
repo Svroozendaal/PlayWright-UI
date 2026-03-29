@@ -7,12 +7,17 @@ export type ResolvedArtifactPolicy = {
   videoMode: 'off' | 'on-failure' | 'always'
 }
 
-export function buildCommand(request: RunRequest, runDir: string, artifactPolicy?: ResolvedArtifactPolicy): string[] {
+export function buildCommand(
+  request: RunRequest,
+  runDir: string,
+  artifactPolicy?: ResolvedArtifactPolicy,
+  configPath?: string
+): string[] {
   const args: string[] = ['test']
 
-  // Reporters
-  args.push(`--reporter=json:${path.join(runDir, 'results.json')}`)
-  args.push('--reporter=html')
+  if (configPath) {
+    args.push(`--config=${configPath}`)
+  }
 
   // Browser selection
   if (request.browser.mode === 'single') {
@@ -54,8 +59,11 @@ export function buildCommand(request: RunRequest, runDir: string, artifactPolicy
     args.push('--debug')
   }
 
-  // Output directory
-  args.push(`--output=${runDir}`)
+  if (!configPath) {
+    args.push(`--reporter=json:${path.join(runDir, 'results.json')}`)
+    args.push('--reporter=html')
+    args.push(`--output=${runDir}`)
+  }
 
   // Artifact flags
   if (artifactPolicy) {
@@ -63,6 +71,22 @@ export function buildCommand(request: RunRequest, runDir: string, artifactPolicy
   }
 
   return args
+}
+
+export function normalizeTargetPathForPlaywright(
+  rootPath: string,
+  targetPath?: string
+): string | undefined {
+  if (!targetPath) {
+    return undefined
+  }
+
+  const relativePath = path.isAbsolute(targetPath) ? path.relative(rootPath, targetPath) : targetPath
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    return targetPath.split(path.sep).join('/')
+  }
+
+  return relativePath.split(path.sep).join('/')
 }
 
 export function buildArtifactFlags(policy: ResolvedArtifactPolicy): string[] {

@@ -1,0 +1,2 @@
+[stderr] 'C:\Workspaces\PlayWright' is not recognized as an internal or external command,
+[stderr] operable program or batch file.

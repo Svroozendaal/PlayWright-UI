@@ -1,4 +1,10 @@
-import { API_ROUTES, IPC, type ApiEnvelope, type DirectoryBrowseResult } from '../../../shared/types/ipc'
+import {
+  API_ROUTES,
+  ERROR_CODES,
+  IPC,
+  type ApiEnvelope,
+  type DirectoryBrowseResult,
+} from '../../../shared/types/ipc'
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 type QueryValue = string | number | boolean | null | undefined
@@ -64,18 +70,46 @@ async function request<T>(
     query?: QueryMap
   }
 ): Promise<ApiEnvelope<T>> {
-  const response = await fetch(buildUrl(path, options?.query), {
-    method,
-    headers:
-      options?.body === undefined
-        ? undefined
-        : {
-            'Content-Type': 'application/json',
-          },
-    body: options?.body === undefined ? undefined : JSON.stringify(options.body),
-  })
+  try {
+    const response = await fetch(buildUrl(path, options?.query), {
+      method,
+      headers:
+        options?.body === undefined
+          ? undefined
+          : {
+              'Content-Type': 'application/json',
+            },
+      body: options?.body === undefined ? undefined : JSON.stringify(options.body),
+    })
 
-  return (await response.json()) as ApiEnvelope<T>
+    const raw = await response.text()
+    if (!raw) {
+      return { version: 1 }
+    }
+
+    try {
+      return JSON.parse(raw) as ApiEnvelope<T>
+    } catch {
+      return {
+        version: 1,
+        error: {
+          code: ERROR_CODES.SERVER_UNAVAILABLE,
+          message: 'The PW Studio server returned an invalid response.',
+        },
+      }
+    }
+  } catch (error) {
+    return {
+      version: 1,
+      error: {
+        code: ERROR_CODES.SERVER_UNAVAILABLE,
+        message:
+          error instanceof Error
+            ? `The PW Studio server is unreachable: ${error.message}`
+            : 'The PW Studio server is unreachable.',
+      },
+    }
+  }
 }
 
 const channelMap: Record<string, RouteSpec> = {

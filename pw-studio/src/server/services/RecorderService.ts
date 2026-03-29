@@ -3,7 +3,13 @@ import path from 'path'
 import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { WS_EVENTS } from '../../shared/types/ipc'
-import type { CodegenOptions, RecorderStatus, RecorderStatusEvent } from '../../shared/types/ipc'
+import type {
+  CodegenOptions,
+  RecorderSaveResult,
+  RecorderStatus,
+  RecorderStatusEvent,
+} from '../../shared/types/ipc'
+import { refineGeneratedCode } from './CodegenRefiner'
 import { getPlaywrightBinary } from '../utils/playwrightBinary'
 
 function quoteArgsForShell(args: string[]): string[] {
@@ -19,6 +25,10 @@ export class RecorderService {
   private publish: (channel: string, data: unknown) => void
 
   private lastError: string | null = null
+
+  private activeOptions: CodegenOptions | null = null
+
+  private lastResult: RecorderSaveResult | null = null
 
   constructor(publish: (channel: string, data: unknown) => void) {
     this.publish = publish
@@ -71,6 +81,8 @@ export class RecorderService {
     proc.stderr?.setEncoding('utf8')
 
     this.activeProcess = proc
+    this.activeOptions = options
+    this.lastResult = null
     this.status = 'running'
     this.lastError = null
     this.notifyStatus()
@@ -90,18 +102,26 @@ export class RecorderService {
       this.activeProcess = null
 
       if (exitCode !== 0 && exitCode !== null) {
+        this.activeOptions = null
         this.lastError = stderrBuffer.trim() || `Codegen exited with code ${exitCode}`
         this.status = 'idle'
         this.notifyStatus()
         return
       }
 
+      const result = this.activeOptions
+        ? this.buildRecorderResult(this.activeOptions)
+        : null
+
+      this.activeOptions = null
       this.status = 'idle'
-      this.notifyStatus()
+      this.notifyStatus(result ?? undefined)
     })
 
     proc.on('error', (error: Error) => {
       this.activeProcess = null
+      this.activeOptions = null
+      this.lastResult = null
       this.lastError = error.message
       this.status = 'idle'
       this.notifyStatus()
@@ -133,6 +153,8 @@ export class RecorderService {
     }
 
     this.activeProcess = null
+    this.activeOptions = null
+    this.lastResult = null
     this.status = 'idle'
     this.notifyStatus()
   }
@@ -145,17 +167,39 @@ export class RecorderService {
     return this.lastError
   }
 
-  getOutputFile(outputPath: string): string | null {
+  getOutputFile(outputPath: string): RecorderSaveResult | null {
+    if (this.lastResult?.outputPath === outputPath && fs.existsSync(outputPath)) {
+      return this.lastResult
+    }
+
     if (fs.existsSync(outputPath)) {
-      return outputPath
+      return this.buildRecorderResult({ outputPath })
     }
     return null
   }
 
-  private notifyStatus(): void {
+  private buildRecorderResult(options: CodegenOptions): RecorderSaveResult | null {
+    if (!fs.existsSync(options.outputPath)) {
+      return null
+    }
+
+    const originalContent = fs.readFileSync(options.outputPath, 'utf8')
+    const refined = refineGeneratedCode(originalContent, options)
+
+    if (refined.content !== originalContent) {
+      fs.writeFileSync(options.outputPath, refined.content, 'utf8')
+    }
+
+    const { content: _content, ...result } = refined
+    this.lastResult = result
+    return result
+  }
+
+  private notifyStatus(result?: RecorderSaveResult): void {
     const payload: RecorderStatusEvent = {
       status: this.status,
       error: this.lastError ?? undefined,
+      result,
     }
     this.publish(WS_EVENTS.RECORDER_STATUS, payload)
   }

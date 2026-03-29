@@ -13,6 +13,14 @@ export function getPlaywrightBinary(rootPath: string): string {
   )
 }
 
+function getShellSafeBinary(rootPath: string): string {
+  const binary = getPlaywrightBinary(rootPath)
+  if (process.platform === 'win32' && binary.includes(' ')) {
+    return `"${binary}"`
+  }
+  return binary
+}
+
 export function spawnPlaywright(
   args: string[],
   rootPath: string,
@@ -24,7 +32,7 @@ export function spawnPlaywright(
   const safeArgs = isWindows
     ? args.map((a) => (a.includes(' ') ? `"${a}"` : a))
     : args
-  return spawn(getPlaywrightBinary(rootPath), safeArgs, {
+  return spawn(getShellSafeBinary(rootPath), safeArgs, {
     cwd: rootPath,
     shell: isWindows,
     env: { ...process.env, ...extraEnv },
@@ -71,7 +79,7 @@ export function checkPlaywrightCommand(
     ? args.map((a) => (a.includes(' ') ? `"${a}"` : a))
     : args
   execFile(
-    getPlaywrightBinary(rootPath),
+    getShellSafeBinary(rootPath),
     safeArgs,
     {
       cwd: rootPath,

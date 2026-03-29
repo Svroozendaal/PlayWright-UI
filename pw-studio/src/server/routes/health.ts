@@ -33,8 +33,7 @@ export const healthRoutes: RouteDefinition[] = [
     schemas: { params: idParamSchema },
     handler: ({ services, params }) => {
       const project = getProjectOrThrow(services, (params as { id: string }).id)
-      const config = services.playwrightConfig.get(project.id, project.rootPath)
-      return { projects: config.projects }
+      return services.playwrightConfig.get(project.id, project.rootPath)
     },
   },
 ]

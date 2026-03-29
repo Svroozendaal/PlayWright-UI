@@ -162,6 +162,7 @@ export const ERROR_CODES = {
   RECORDER_ALREADY_RUNNING: 'RECORDER_ALREADY_RUNNING',
   INVALID_PATH: 'INVALID_PATH',
   INVALID_INPUT: 'INVALID_INPUT',
+  SERVER_UNAVAILABLE: 'SERVER_UNAVAILABLE',
   UNKNOWN: 'UNKNOWN',
 } as const
 
@@ -197,6 +198,13 @@ export type HealthSnapshot = {
   checkedAt: string
   overallStatus: HealthStatus
   items: HealthItem[]
+}
+
+export type ProjectConfigSummary = {
+  testDir: string
+  projects: string[]
+  outputDir: string
+  readMethod: 'config' | 'regex' | 'fallback'
 }
 
 export type WizardParams = {
@@ -291,11 +299,43 @@ export type CodegenOptions = {
   browser?: string
 }
 
+export type CodegenExtractionKind = 'selector' | 'value' | 'url'
+
+export type CodegenExtraction = {
+  kind: CodegenExtractionKind
+  name: string
+  value: string
+  occurrences: number
+}
+
+export type CodegenSuggestionKind =
+  | 'structure'
+  | 'selector'
+  | 'cleanup'
+  | 'maintainability'
+
+export type CodegenSuggestion = {
+  kind: CodegenSuggestionKind
+  title: string
+  detail: string
+}
+
+export type RecorderSaveResult = {
+  outputPath: string
+  testTitle: string
+  transformed: boolean
+  actionCount: number
+  appliedChanges: string[]
+  extractions: CodegenExtraction[]
+  suggestions: CodegenSuggestion[]
+}
+
 export type RecorderStatus = 'idle' | 'running'
 
 export type RecorderStatusEvent = {
   status: RecorderStatus
   error?: string
+  result?: RecorderSaveResult
 }
 
 export type AppInfo = {
