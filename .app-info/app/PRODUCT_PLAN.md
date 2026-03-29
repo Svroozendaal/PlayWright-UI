@@ -1,49 +1,60 @@
-# PRODUCT PLAN — PW Studio v1
+# PRODUCT PLAN - PW Studio
 
-## Build Phases
+## Delivered Platform Shape
 
-### Phase 1 — Foundation
-Express server, React SPA, SQLite + migrations system, REST API + WebSocket transport, shared route constants in `src/shared/types/ipc.ts`, project registry, basic settings, and a browser-based folder picker.
-**Milestone:** App starts in the browser. API structure is locked. Project creation and registration works.
+PW Studio v1 now consists of:
 
-### Phase 2 — Project Lifecycle + Health
-Wizard (with conflict check on existing folder), template generation, project open flow, health checks with cache strategy, Playwright version detection via local binary, Health Panel + Force Run escape.
-**Milestone:** Project import and health checks are visible through the web UI.
+- local Express server
+- React SPA
+- REST API + WebSocket transport
+- SQLite persistence
+- plugin-first backend runtime
+- visual block authoring that saves back into Playwright code
 
-### Phase 3 + 4 — Explorer + Run Engine (parallel start)
-**Phase 3:** chokidar (including environment + config cache invalidation), `ProjectIndexService` (full rebuild), file tree, test file detection, regex test case extraction, parse warnings.
-**Phase 4:** Local binary detection, CLI command builder, single active run via `spawn()`, log streaming over WebSocket, cancel flow, run history, run detail basics.
-**Milestone:** Explorer is live, one test file can be run, and exit code plus log are visible.
+## Delivery Phases
 
-### Phase 5 — Artifact Layer
-`ArtifactService`, `file_artifact_policies` (migration 3), `parentRunId` + `safeTitleForGrep` (migration 3), artifact policy to CLI flags, `rerunFailed`, run detail artifacts tab.
-**Milestone:** Artifacts are configurable per file and rerun failed works.
+### Phase 1 - Foundation
 
-### Phase 6 — Environments + Secrets + Recorder
-`EnvironmentService` + watcher invalidation, `SecretsService` (`keytar`), temporary run overrides, `RecorderService` (recorder output -> watcher -> explorer refresh automatically), and browser-based save path selection.
-**Milestone:** Environment with secret retrieval in run and recording save flow both work.
+Express server, React SPA, route contracts, project registry, settings bootstrap, local browser runtime.
 
-### Phase 7 — Packaging + Polish
-`npm` install/start flow, zipped Node distribution, PWA manifest, path audit (no hardcoded paths), `ApiEnvelope.error` worked out per service, SQLite location shown in Settings, documentation, sample project.
-**Milestone:** PW Studio v1 is installable via `npm` or a bundled local runtime.
+### Phase 2 - Project Lifecycle + Health
 
-## Definition of Done — v1
+Project creation and import, Playwright config extraction, health checks, project defaults.
+
+### Phase 3 - Explorer
+
+Project indexing, file tree, test-case discovery, file IO, code editor.
+
+### Phase 4 - Run Engine
+
+Run orchestration, headed mode, command building, realtime logs, persisted results and reports.
+
+### Phase 5 - Artefacts
+
+Artefact policy storage, rerun failed, trace/report opening, comparison support.
+
+### Phase 6 - Environments + Secrets + Recorder
+
+Environment management, keychain-backed secrets, recorder start/stop/save, recorder refinement.
+
+### Phase 7 - Packaging + Platform
+
+Bundled runtime, OpenAPI, block library, visual editor, plugin runtime, plugin management, documentation.
+
+## Definition of Done
 
 PW Studio v1 is complete when a user can:
 
-1. Create a new project via wizard
-2. Import an existing Playwright project
-3. Immediately see if the project is healthy
-4. See tests in a live explorer (folders, files, test cases)
-5. Run a test/file/folder/all with the local binary
-6. Review logs and test results per run
-7. Configure artifacts per file and open them directly
-8. Manage environments with encrypted secrets
-9. Provide temporary run overrides
-10. Start and save codegen recordings
-11. Install the app via `npm` or a bundled local runtime
-12. See the SQLite database location in Settings
+1. Create or import a Playwright project
+2. Validate the project health
+3. Browse, edit, and save Playwright files
+4. Run tests and inspect logs, statuses, and artefacts
+5. Record codegen and save the output into the project
+6. Open a test case in a visual block editor and save back to code
+7. Manage a reusable block library
+8. Enable optional plugins per project
+9. Install via `npm` or the bundled local runtime
 
-## First Milestone
+## Current Shipped Extension
 
-> "Open an imported Playwright project, pass health checks, show a live explorer that refreshes on file changes, and run one test file with the local Playwright binary while viewing exit code and log in the browser UI."
+The repo includes a shipped optional Mendix plugin to validate the plugin runtime and block-extension model.

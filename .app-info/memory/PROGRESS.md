@@ -35,3 +35,15 @@ SCOPE: Collapsible project navigation for the PW Studio web app.
 FILES_CHANGED: `pw-studio/src/renderer/src/components/Sidebar.tsx`, `pw-studio/src/renderer/src/App.css`, `.app-info/memory/SESSION_STATE.md`, `.app-info/memory/DECISIONS_LOG.md`, `.app-info/memory/PROGRESS.md`.
 VALIDATION: `npm run typecheck`, `npm run build`.
 NOTES: The project sidebar now supports a persistent icon-only collapsed state, keeps settings and back navigation usable in the compact rail, and preserves the active run indicator in both layouts.
+
+## PROGRESS_ENTRY - 2026-03-29
+SCOPE: Replace the custom folder picker with the operating system native directory chooser.
+FILES_CHANGED: `pw-studio/src/server/routes/directories.ts`, `pw-studio/src/shared/types/ipc.ts`, `pw-studio/src/renderer/src/api/client.ts`, `pw-studio/src/renderer/src/components/CreateProjectWizard.tsx`, `pw-studio/src/renderer/src/pages/ProjectsPage.tsx`, `pw-studio/src/renderer/src/pages/RecorderPage.tsx`, `.app-info/memory/SESSION_STATE.md`, `.app-info/memory/DECISIONS_LOG.md`, `.app-info/memory/PROGRESS.md`.
+VALIDATION: `npm run typecheck`, `npm run build`.
+NOTES: Project creation, project import, and recorder output selection now open the native system folder chooser. The backend handles the dialog so the renderer still receives an absolute path that the existing project and recorder flows can use unchanged.
+
+## PROGRESS_ENTRY - 2026-03-29
+SCOPE: Plugin-first platform completion, shipped Mendix plugin, documentation refresh, and building-block skill creation.
+FILES_CHANGED: `pw-studio/plugins/**/*`, `pw-studio/src/server/plugins/**/*`, `pw-studio/src/server/routes/plugins.ts`, `pw-studio/src/server/services/*`, `pw-studio/src/renderer/src/pages/PluginManagerPage.tsx`, `pw-studio/src/renderer/src/pages/ProjectIntegrationsPage.tsx`, `pw-studio/src/renderer/src/components/TestBlockEditor.tsx`, `pw-studio/README.md`, `pw-studio/ARCHITECTURE.md`, `pw-studio/CONTRIBUTING.md`, `CLAUDE.md`, `pw-studio-blueprint.md`, `.app-info/docs/*`, `.app-info/app/*`, `.app-info/config/OVERVIEW.md`, `.app-info/features/*`, `.app-info/skills/OVERVIEW.md`, `.app-info/development/OVERVIEW.md`, `.app-info/development/prompts/OVERVIEW.md`, `.app-info/development/prompts/FEATURE_IMPROVE_CODEGEN.md`, `.app-info/skills/create-building-blocks/**/*`, `.app-info/memory/*`.
+VALIDATION: `npm run typecheck`, `npm run build`, runtime plugin load smoke, Mendix plugin enablement smoke, block-library availability smoke, test-editor sync smoke for `mx.clickRowCell(...)`, `quick_validate.py` for the new skill.
+NOTES: The repo now documents the plugin-first runtime as the real application shape, ships the Mendix plugin as an optional local plugin, and includes a dedicated app-specific skill for adding future visual blocks safely.

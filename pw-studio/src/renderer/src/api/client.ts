@@ -150,6 +150,11 @@ const channelMap: Record<string, RouteSpec> = {
       }),
     body: (payload) => payload,
   },
+  [IPC.DIALOG_OPEN_DIRECTORY]: {
+    method: 'POST',
+    path: API_ROUTES.DIALOG_OPEN_DIRECTORY,
+    body: (payload) => payload,
+  },
   [IPC.HEALTH_GET]: {
     method: 'GET',
     path: (payload) =>
@@ -245,6 +250,26 @@ const channelMap: Record<string, RouteSpec> = {
       buildPath(API_ROUTES.BLOCK_LIBRARY_PROJECT, { id: getRequiredString(payload, 'projectId') }),
     body: (payload) => ({
       includedTemplateIds: payload['includedTemplateIds'],
+    }),
+  },
+  [IPC.PLUGINS_LIST]: {
+    method: 'GET',
+    path: API_ROUTES.PLUGINS_LIST,
+  },
+  [IPC.PROJECT_PLUGINS_LIST]: {
+    method: 'GET',
+    path: (payload) =>
+      buildPath(API_ROUTES.PROJECT_PLUGINS_LIST, { id: getRequiredString(payload, 'projectId') }),
+  },
+  [IPC.PROJECT_PLUGIN_UPDATE]: {
+    method: 'PUT',
+    path: (payload) =>
+      buildPath(API_ROUTES.PROJECT_PLUGIN_UPDATE, {
+        id: getRequiredString(payload, 'projectId'),
+        pluginId: getRequiredString(payload, 'pluginId'),
+      }),
+    body: (payload) => ({
+      enabled: Boolean(payload['enabled']),
     }),
   },
   [IPC.RUNS_START]: {
@@ -464,6 +489,24 @@ export const api = {
   async browseDirectories(path?: string): Promise<ApiEnvelope<DirectoryBrowseResult>> {
     return request<DirectoryBrowseResult>('POST', API_ROUTES.DIRECTORIES_BROWSE, {
       body: path ? { path } : {},
+    })
+  },
+
+  /**
+   * Open the operating system's native directory picker and return the selected path.
+   *
+   * Params:
+   * options - Optional initial path and dialog title.
+   *
+   * Returns:
+   * API envelope containing the selected directory path, or `null` when cancelled.
+   */
+  async openDirectoryDialog(options?: {
+    startPath?: string
+    title?: string
+  }): Promise<ApiEnvelope<string | null>> {
+    return request<string | null>('POST', API_ROUTES.DIALOG_OPEN_DIRECTORY, {
+      body: options ?? {},
     })
   },
 

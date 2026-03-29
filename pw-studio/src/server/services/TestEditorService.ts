@@ -4,6 +4,7 @@ import { createHash } from 'crypto'
 import { z } from 'zod'
 import { ERROR_CODES } from '../../shared/types/ipc'
 import type {
+  BlockFieldValue,
   TestBlock,
   TestCaseRef,
   TestEditorDocument,
@@ -11,6 +12,7 @@ import type {
   TestEditorMode,
 } from '../../shared/types/ipc'
 import { ApiRouteError } from '../middleware/envelope'
+import type { PluginRuntimeService } from '../plugins/runtime'
 import { resolveUserDataPath } from '../utils/paths'
 import { BlockLibraryService } from './BlockLibraryService'
 import {
@@ -36,50 +38,34 @@ const persistedTestCaseRefSchema = z.object({
   testTitle: z.string(),
 })
 
-const persistedSelectorSchema = z.object({
+const selectorSchema = z.object({
   strategy: z.enum(['role', 'text', 'label', 'test_id', 'css']),
   value: z.string(),
   name: z.string().optional(),
 })
 
-const persistedBlockSchema = z.discriminatedUnion('kind', [
-  z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    templateId: z.string().min(1).optional(),
-    kind: z.literal('raw_code'),
-    code: z.string(),
-  }),
-  z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    templateId: z.string().min(1).optional(),
-    kind: z.literal('goto_url'),
-    url: z.string(),
-  }),
-  z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    templateId: z.string().min(1).optional(),
-    kind: z.literal('click_element'),
-    selector: persistedSelectorSchema,
-  }),
-  z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    templateId: z.string().min(1).optional(),
-    kind: z.literal('fill_field'),
-    selector: persistedSelectorSchema,
-    value: z.string(),
-  }),
-  z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    templateId: z.string().min(1).optional(),
-    kind: z.literal('expect_url'),
-    url: z.string(),
-  }),
+const testReferenceSchema = z.object({
+  filePath: z.string(),
+  ordinal: z.number().int().nonnegative(),
+  testTitle: z.string(),
+})
+
+const blockFieldValueSchema: z.ZodType<BlockFieldValue> = z.union([
+  z.string(),
+  z.boolean(),
+  z.number(),
+  z.null(),
+  selectorSchema,
+  testReferenceSchema,
 ])
+
+const persistedBlockSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  templateId: z.string().min(1).optional(),
+  kind: z.string().min(1),
+  values: z.record(z.string(), blockFieldValueSchema),
+})
 
 const persistedTemplateSchema = z.object({
   callee: z.string().min(1),
@@ -111,11 +97,11 @@ const persistedEntrySchema = z.object({
 const visualStoreSchema = z.record(z.string(), persistedEntrySchema)
 
 export class TestEditorService {
-  constructor(private readonly blockLibrary: BlockLibraryService) {}
+  constructor(
+    private readonly blockLibrary: BlockLibraryService,
+    private readonly pluginRuntime: PluginRuntimeService
+  ) {}
 
-  /**
-   * Load an existing test case into the canonical visual editor document.
-   */
   loadExisting(rootPath: string, filePath: string, testCaseRef: TestCaseRef): TestEditorDocument {
     const source = this.readProjectFile(rootPath, filePath)
     const parsed = parseTestSource(source, filePath)
@@ -129,21 +115,18 @@ export class TestEditorService {
       )
     }
 
-    const cached = this.loadPersistedVisualDocument(filePath, found.testCaseRef, found.snippet)
+    const cached = this.loadPersistedVisualDocument(rootPath, filePath, found.testCaseRef, found.snippet)
     if (cached) {
       return cached
     }
 
     const stored = this.readPersistedVisualEntry(filePath, found.testCaseRef)
-    const built = buildDocumentFromParsedTest(found, filePath, 'existing')
+    const built = buildDocumentFromParsedTest(found, filePath, 'existing', this.getDefinitions(rootPath))
     const hydrated = stored ? this.mergeStoredBlockState(built, stored.document) : built
     this.persistVisualDocument(hydrated, found.snippet)
     return hydrated
   }
 
-  /**
-   * Create a blank visual editor draft for appending a new test to a file.
-   */
   createDraft(rootPath: string, filePath: string): TestEditorDocument {
     this.assertProjectFile(rootPath, filePath)
 
@@ -159,21 +142,22 @@ export class TestEditorService {
 
     return {
       ...draft,
-      code: renderDocumentCode(draft),
+      code: renderDocumentCode(draft, this.getDefinitions(rootPath), {
+        rootPath,
+        documentFilePath: draft.filePath,
+      }),
     }
   }
 
-  /**
-   * Reparse edited code into the canonical visual editor document.
-   */
   syncCode(
+    rootPath: string,
     filePath: string,
     mode: TestEditorMode,
     code: string,
     testCaseRef?: TestCaseRef
   ): TestEditorDocument {
     try {
-      const document = parseSnippetToDocument(code, filePath, mode)
+      const document = parseSnippetToDocument(code, filePath, mode, this.getDefinitions(rootPath))
       return {
         ...document,
         testCaseRef: mode === 'existing' ? testCaseRef ?? document.testCaseRef : document.testCaseRef,
@@ -187,16 +171,17 @@ export class TestEditorService {
     }
   }
 
-  /**
-   * Persist the canonical editor document back into the source file.
-   */
   save(rootPath: string, document: TestEditorDocument): TestEditorDocument {
     const titleErrors = this.validateBlockTitles(document.blocks)
     if (titleErrors.length > 0) {
       throw new ApiRouteError(ERROR_CODES.INVALID_INPUT, titleErrors.join('\n'), 400)
     }
 
-    const syntaxErrors = validateRawCodeBlocks(document.blocks)
+    const syntaxErrors = validateRawCodeBlocks(document.blocks, this.getDefinitions(rootPath), {
+      rootPath,
+      documentFilePath: document.filePath,
+      documentTestCaseRef: document.testCaseRef,
+    })
     if (syntaxErrors.length > 0) {
       throw new ApiRouteError(ERROR_CODES.INVALID_INPUT, syntaxErrors.join('\n\n'), 400)
     }
@@ -208,9 +193,6 @@ export class TestEditorService {
     return this.saveExisting(rootPath, document)
   }
 
-  /**
-   * Return built-in plus locally configured block templates.
-   */
   getLibraryTemplates(rootPath?: string): TestEditorLibraryPayload {
     return this.blockLibrary.getEditorLibrary(rootPath)
   }
@@ -232,8 +214,13 @@ export class TestEditorService {
       )
     }
 
-    const rendered = renderDocumentCode(document, detectEol(source))
-    const synced = this.parseRenderedDocument(rendered, document.filePath, 'existing')
+    const rendered = renderDocumentCode(document, this.getDefinitions(rootPath), {
+      eol: detectEol(source),
+      rootPath,
+      documentFilePath: document.filePath,
+      documentTestCaseRef: document.testCaseRef,
+    })
+    const synced = this.parseRenderedDocument(rootPath, rendered, document.filePath, 'existing')
     const nextSource = replaceTestInSource(source, current, synced.code)
     fs.writeFileSync(this.assertProjectFile(rootPath, document.filePath), nextSource, 'utf8')
 
@@ -249,7 +236,7 @@ export class TestEditorService {
     }
 
     const savedDocument = this.mergeStoredBlockState(
-      buildDocumentFromParsedTest(saved, document.filePath, 'existing'),
+      buildDocumentFromParsedTest(saved, document.filePath, 'existing', this.getDefinitions(rootPath)),
       document
     )
     this.persistVisualDocument(savedDocument, saved.snippet)
@@ -260,8 +247,12 @@ export class TestEditorService {
     const filePath = this.assertProjectFile(rootPath, document.filePath)
     const source = fs.readFileSync(filePath, 'utf8')
     const parsed = parseTestSource(source, document.filePath)
-    const rendered = renderDocumentCode(document, detectEol(source))
-    const synced = this.parseRenderedDocument(rendered, document.filePath, 'create')
+    const rendered = renderDocumentCode(document, this.getDefinitions(rootPath), {
+      eol: detectEol(source),
+      rootPath,
+      documentFilePath: document.filePath,
+    })
+    const synced = this.parseRenderedDocument(rootPath, rendered, document.filePath, 'create')
     const nextSource = appendTestToSource(source, synced.code, detectEol(source))
 
     fs.writeFileSync(filePath, nextSource, 'utf8')
@@ -277,7 +268,7 @@ export class TestEditorService {
     }
 
     const savedDocument = this.mergeStoredBlockState(
-      buildDocumentFromParsedTest(saved, document.filePath, 'existing'),
+      buildDocumentFromParsedTest(saved, document.filePath, 'existing', this.getDefinitions(rootPath)),
       document
     )
     this.persistVisualDocument(savedDocument, saved.snippet)
@@ -290,12 +281,13 @@ export class TestEditorService {
   }
 
   private parseRenderedDocument(
+    rootPath: string,
     code: string,
     filePath: string,
     mode: TestEditorMode
   ): TestEditorDocument {
     try {
-      return parseSnippetToDocument(code, filePath, mode)
+      return parseSnippetToDocument(code, filePath, mode, this.getDefinitions(rootPath))
     } catch (error) {
       throw new ApiRouteError(
         ERROR_CODES.INVALID_INPUT,
@@ -329,6 +321,7 @@ export class TestEditorService {
   }
 
   private loadPersistedVisualDocument(
+    rootPath: string,
     filePath: string,
     testCaseRef: TestCaseRef,
     snippetCode: string
@@ -339,6 +332,11 @@ export class TestEditorService {
     }
 
     if (entry.codeFingerprint !== this.hashCode(snippetCode)) {
+      return null
+    }
+
+    const availableKinds = new Set(this.getDefinitions(rootPath).map((definition) => definition.kind))
+    if (!entry.document.blocks.every((block) => availableKinds.has(block.kind))) {
       return null
     }
 
@@ -434,6 +432,10 @@ export class TestEditorService {
 
   private hashCode(value: string): string {
     return createHash('sha1').update(value).digest('hex')
+  }
+
+  private getDefinitions(rootPath?: string) {
+    return this.pluginRuntime.getAvailableBlockDefinitions(rootPath)
   }
 
   private assertProjectFile(rootPath: string, filePath: string): string {

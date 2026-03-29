@@ -20,6 +20,8 @@ import { FileService } from './FileService'
 import { DashboardService } from './DashboardService'
 import { TestEditorService } from './TestEditorService'
 import { BlockLibraryService } from './BlockLibraryService'
+import { PluginProjectService, PluginRuntimeService } from '../plugins/runtime'
+import { registerCorePluginContributions } from '../plugins/core'
 
 export type ServiceContainer = {
   db: Database.Database
@@ -41,6 +43,7 @@ export type ServiceContainer = {
   runComparison: RunComparisonService
   file: FileService
   dashboard: DashboardService
+  pluginRuntime: PluginRuntimeService
   blockLibrary: BlockLibraryService
   testEditor: TestEditorService
 }
@@ -67,14 +70,15 @@ export function createServices(
   const projectIndex = new ProjectIndexService(playwrightConfig)
   const run = new RunService(db, publish)
   const artifact = new ArtifactService(db)
-  const recorder = new RecorderService(publish)
   const flakyTracking = new FlakyTrackingService(db)
   const runComparison = new RunComparisonService(db)
   const file = new FileService()
   const dashboard = new DashboardService(db, projectIndex, flakyTracking)
-  const blockLibrary = new BlockLibraryService()
-  const testEditor = new TestEditorService(blockLibrary)
-
+  const pluginRuntime = new PluginRuntimeService(new PluginProjectService())
+  registerCorePluginContributions(pluginRuntime)
+  const blockLibrary = new BlockLibraryService(pluginRuntime)
+  const recorder = new RecorderService(publish, pluginRuntime)
+  const testEditor = new TestEditorService(blockLibrary, pluginRuntime)
   run.setFlakyTracking(flakyTracking)
 
   fileWatch.setOnFileEvent(async (event) => {
@@ -107,6 +111,7 @@ export function createServices(
     runComparison,
     file,
     dashboard,
+    pluginRuntime,
     blockLibrary,
     testEditor,
   }

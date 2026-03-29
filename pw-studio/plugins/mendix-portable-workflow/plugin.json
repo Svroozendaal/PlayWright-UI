@@ -1,0 +1,7 @@
+{
+  "id": "mendix-portable-workflow",
+  "name": "Mendix Portable Workflow",
+  "version": "0.1.0",
+  "description": "Portable Mendix recorder normalization, helper scaffolding, and visual blocks.",
+  "capabilities": ["blocks", "recorderTransforms", "projectSetup"]
+}

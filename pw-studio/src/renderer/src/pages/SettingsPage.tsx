@@ -165,6 +165,27 @@ export function SettingsPage(): JSX.Element {
           </div>
 
           <div className="settings-row">
+            <span className="settings-label">Plugins</span>
+            <span className="settings-value">
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => navigate('/settings/plugins')}
+              >
+                Open Plugin Manager
+              </button>
+              {projectId && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ marginLeft: 8 }}
+                  onClick={() => navigate(`/project/${projectId}/integrations`)}
+                >
+                  Project Integrations
+                </button>
+              )}
+            </span>
+          </div>
+
+          <div className="settings-row">
             <span className="settings-label">Visual block library</span>
             <span className="settings-value">
               <button

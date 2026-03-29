@@ -18,6 +18,7 @@ import { dashboardRoutes } from './dashboard'
 import { settingsRoutes } from './settings'
 import { testEditorRoutes } from './testEditor'
 import { blockLibraryRoutes } from './blockLibrary'
+import { pluginRoutes } from './plugins'
 
 export const allRoutes: RouteDefinition[] = [
   ...projectRoutes,
@@ -36,6 +37,7 @@ export const allRoutes: RouteDefinition[] = [
   ...settingsRoutes,
   ...testEditorRoutes,
   ...blockLibraryRoutes,
+  ...pluginRoutes,
 ]
 
 export function registerAllRoutes(app: Express | Router, services: ServiceContainer): RouteDefinition[] {

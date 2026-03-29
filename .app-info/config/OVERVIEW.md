@@ -1,61 +1,46 @@
-# CONFIG — PW Studio
+# CONFIG - PW Studio
 
 ## Technology Stack
 
 | Layer | Technology |
 |---|---|
 | Local server | Express + TypeScript |
-| UI | React + TypeScript |
+| Browser UI | React + TypeScript |
 | Realtime push | WebSocket (`ws`) |
 | Database | SQLite (`better-sqlite3`) |
-| File watching | chokidar |
-| Secrets | `keytar` (OS keychain) |
-| Automation | Local Playwright binary |
+| Secrets | `keytar` |
+| File watching | `chokidar` |
+| Automation | local Playwright binary |
 | Packaging | `npm` + bundled Node runtime |
 
-## System Requirements
-
-- **Node.js:** minimum 20.x
-- **Playwright:** minimum 1.40.0
-- **Platform:** Windows, macOS, and Linux for local development and local use
-
-## Project Structure
+## Runtime Layout
 
 ```text
 pw-studio/
-├── src/
-│   ├── server/
-│   │   ├── routes/         ← Express route modules
-│   │   ├── services/       ← Business logic services
-│   │   ├── db/             ← database.ts, migrations.ts
-│   │   ├── middleware/     ← envelope and validation helpers
-│   │   ├── plugins/        ← plugin loader
-│   │   ├── ws.ts           ← WebSocket server
-│   │   └── index.ts        ← Express entry point
-│   ├── renderer/
-│   │   ├── public/         ← PWA manifest and static assets
-│   │   └── src/
-│   │       ├── api/        ← fetch client and socket hook
-│   │       ├── components/
-│   │       ├── pages/
-│   │       └── main.tsx
-│   └── shared/
-│       └── types/          ← shared transport + domain types
-├── vite.config.ts
-├── tsconfig.server.json
-├── tsconfig.web.json
-├── package.json
-└── sample-project/
+|-- plugins/                 # shipped local plugins
+|-- src/
+|   |-- server/
+|   |   |-- plugins/        # runtime, loader, core registrations
+|   |   |-- routes/
+|   |   |-- services/
+|   |   |-- db/
+|   |   |-- middleware/
+|   |   `-- utils/
+|   |-- renderer/
+|   `-- shared/
+`-- sample-project/
 ```
 
 ## Runtime Rules
 
-- The API and WebSocket server bind to `127.0.0.1`.
-- Vite proxies `/api` and `/ws` to the local server in development.
-- Production serves the built SPA from the same local server.
-- No native-module rebuild postinstall step is required.
+- Bind the server to `127.0.0.1`.
+- Serve the built SPA from the same server in production.
+- Use Vite proxying in development.
+- Keep plugin installation app-wide and plugin enablement project-specific.
+- Use file-backed project plugin config under `.pw-studio/plugins/`.
 
 ## Environment Variables
 
-- `PORT` — optional local server port override
-- `PWSTUDIO_EXTRACT=1` — used during config extraction to identify extraction context
+- `PORT` - optional local server port override
+- `PW_STUDIO_PLUGIN_DIRS` - optional extra plugin directories
+- `PWSTUDIO_EXTRACT=1` - config extraction hint

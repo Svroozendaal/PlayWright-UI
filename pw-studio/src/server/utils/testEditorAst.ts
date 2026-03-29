@@ -1,17 +1,13 @@
+import { randomUUID } from 'crypto'
 import ts from 'typescript'
 import type {
-  ClickElementBlock,
-  ExpectUrlBlock,
-  FillFieldBlock,
-  GotoUrlBlock,
-  RawCodeBlock,
-  SelectorSpec,
   TestBlock,
   TestCaseRef,
   TestEditorDocument,
   TestEditorMode,
   TestEditorTemplate,
 } from '../../shared/types/ipc'
+import type { ServerBlockContext, ServerBlockDefinition } from '../plugins/runtime'
 
 type CallbackNode = ts.ArrowFunction | ts.FunctionExpression
 
@@ -39,9 +35,6 @@ type BlockExtractionResult = {
 
 const PLAYWRIGHT_TEST_CALLEE = /^test(?:\.(?:only|skip|fixme|fail|slow))?$/
 
-/**
- * Parse a Playwright test source file and collect discoverable test calls.
- */
 export function parseTestSource(code: string, filePath: string): ParsedTestSource {
   const sourceFile = ts.createSourceFile(
     filePath,
@@ -75,15 +68,13 @@ export function parseTestSource(code: string, filePath: string): ParsedTestSourc
   }
 }
 
-/**
- * Build the canonical visual editor document for one parsed test case.
- */
 export function buildDocumentFromParsedTest(
   parsed: ParsedTestCase,
   filePath: string,
-  mode: TestEditorMode
+  mode: TestEditorMode,
+  definitions: ServerBlockDefinition[]
 ): TestEditorDocument {
-  const extraction = extractBlocksFromBody(parsed.body)
+  const extraction = extractBlocksFromBody(parsed.body, definitions)
 
   return {
     mode,
@@ -97,13 +88,11 @@ export function buildDocumentFromParsedTest(
   }
 }
 
-/**
- * Convert a single test snippet into the canonical document model.
- */
 export function parseSnippetToDocument(
   code: string,
   filePath: string,
-  mode: TestEditorMode
+  mode: TestEditorMode,
+  definitions: ServerBlockDefinition[]
 ): TestEditorDocument {
   const parsed = parseTestSource(code, filePath)
   const diagnostics = formatParseDiagnostics(parsed)
@@ -125,17 +114,16 @@ export function parseSnippetToDocument(
     throw new Error('Only a single test snippet may be edited in the visual test editor.')
   }
 
-  return buildDocumentFromParsedTest(only, filePath, mode)
+  return buildDocumentFromParsedTest(only, filePath, mode, definitions)
 }
 
-/**
- * Render the canonical document back into plain Playwright code.
- */
 export function renderDocumentCode(
   document: Pick<TestEditorDocument, 'testTitle' | 'blocks' | 'template'>,
-  eol = '\n'
+  definitions: ServerBlockDefinition[],
+  context: ServerBlockContext & { eol?: string } = {}
 ): string {
-  const body = renderBody(document.blocks, eol)
+  const eol = context.eol ?? '\n'
+  const body = renderBody(document.blocks, definitions, eol, context)
   const args = [quoteString(document.testTitle), ...document.template.extraArgs]
   const callback = renderCallback(document.template, body, eol)
   args.push(callback)
@@ -143,9 +131,6 @@ export function renderDocumentCode(
   return `${document.template.callee}(${args.join(', ')})`
 }
 
-/**
- * Replace a selected test snippet in its source file.
- */
 export function replaceTestInSource(
   source: string,
   parsed: ParsedTestCase,
@@ -154,9 +139,6 @@ export function replaceTestInSource(
   return `${source.slice(0, parsed.rangeStart)}${renderedCode}${source.slice(parsed.rangeEnd)}`
 }
 
-/**
- * Append a new test snippet to an existing test file.
- */
 export function appendTestToSource(
   source: string,
   renderedCode: string,
@@ -170,32 +152,26 @@ export function appendTestToSource(
   return `${trimmed}${eol}${eol}${renderedCode}${eol}`
 }
 
-/**
- * Validate syntax for all editable raw-code blocks.
- */
-export function validateRawCodeBlocks(blocks: TestBlock[]): string[] {
+export function validateRawCodeBlocks(
+  blocks: TestBlock[],
+  definitions: ServerBlockDefinition[],
+  context: ServerBlockContext = {}
+): string[] {
   const errors: string[] = []
+  const definitionsByKind = new Map(definitions.map((definition) => [definition.kind, definition] as const))
 
   for (const block of blocks) {
-    if (block.kind !== 'raw_code') {
+    const validate = definitionsByKind.get(block.kind)?.validate
+    if (!validate) {
       continue
     }
 
-    const wrapped = `async function __pwStudioRaw() {\n${block.code}\n}\n`
-    const parsed = parseTestSource(wrapped, '__pwstudio_raw.ts')
-    const diagnostics = formatParseDiagnostics(parsed)
-
-    if (diagnostics.length > 0) {
-      errors.push(`Raw code block is invalid:\n${diagnostics.join('\n')}`)
-    }
+    errors.push(...validate(block, context))
   }
 
   return errors
 }
 
-/**
- * Format syntax diagnostics into readable line-based messages.
- */
 export function formatParseDiagnostics(parsed: ParsedTestSource): string[] {
   return parsed.diagnostics.map((diagnostic) => {
     const start = diagnostic.start ?? 0
@@ -297,11 +273,12 @@ function hasAsyncModifier(node: CallbackNode): boolean {
   return node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword) ?? false
 }
 
-function extractBlocksFromBody(body: ts.Block): BlockExtractionResult {
+function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinition[]): BlockExtractionResult {
   const blocks: TestBlock[] = []
   const warnings: string[] = []
   const sourceFile = body.getSourceFile()
   const sourceText = sourceFile.text
+  const parsers = definitions.filter((definition) => typeof definition.parseStatement === 'function')
   let cursor = body.getStart(sourceFile) + 1
   let sawUnsupportedCode = false
 
@@ -314,7 +291,10 @@ function extractBlocksFromBody(body: ts.Block): BlockExtractionResult {
     }
 
     const titleComment = getStatementTitleComment(sourceFile, sourceText, statement)
-    const mapped = mapStatementToBlock(statement, titleComment?.title ?? null)
+    const mapped = parsers
+      .map((definition) => definition.parseStatement?.(statement, titleComment?.title ?? null))
+      .find((value): value is TestBlock => Boolean(value))
+
     if (mapped) {
       blocks.push(mapped)
     } else {
@@ -336,7 +316,7 @@ function extractBlocksFromBody(body: ts.Block): BlockExtractionResult {
     sawUnsupportedCode = true
   }
 
-  const titledBlocks = ensureBlockTitles(blocks)
+  const titledBlocks = ensureBlockTitles(blocks, definitions)
 
   if (sawUnsupportedCode) {
     warnings.push('Some lines remain raw code blocks because they do not map to a supported visual block yet.')
@@ -395,9 +375,10 @@ function extractRawCodeTitle(code: string, preferredTitle?: string): { title: st
   }
 }
 
-function ensureBlockTitles(blocks: TestBlock[]): TestBlock[] {
+function ensureBlockTitles(blocks: TestBlock[], definitions: ServerBlockDefinition[]): TestBlock[] {
   const used = new Set<string>()
   const counters = new Map<string, number>()
+  const definitionsByKind = new Map(definitions.map((definition) => [definition.kind, definition] as const))
 
   return blocks.map((block) => {
     const preferred = sanitiseTitle(block.title)
@@ -409,7 +390,7 @@ function ensureBlockTitles(blocks: TestBlock[]): TestBlock[] {
       }
     }
 
-    const base = defaultTitleForKind(block.kind)
+    const base = definitionsByKind.get(block.kind)?.defaultTitle ?? block.kind.replace(/_/g, ' ')
     let next = (counters.get(base) ?? 0) + 1
     let candidate = next === 1 ? base : `${base} ${next}`
     while (used.has(candidate.toLowerCase())) {
@@ -425,25 +406,6 @@ function ensureBlockTitles(blocks: TestBlock[]): TestBlock[] {
       title: candidate,
     }
   })
-}
-
-function defaultTitleForKind(kind: TestBlock['kind']): string {
-  switch (kind) {
-    case 'goto_url':
-      return 'go to url'
-    case 'click_element':
-      return 'click element'
-    case 'fill_field':
-      return 'fill field'
-    case 'expect_url':
-      return 'expect url'
-    case 'raw_code':
-      return 'raw code'
-  }
-}
-
-function sanitiseTitle(title: string): string {
-  return title.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 function getStatementTitleComment(
@@ -475,234 +437,31 @@ function getStatementTitleComment(
   return null
 }
 
-function createRawCodeBlock(code: string, title?: string): RawCodeBlock {
+function createRawCodeBlock(code: string, title?: string): TestBlock {
   const extracted = extractRawCodeTitle(code, title)
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     title: extracted.title,
     kind: 'raw_code',
-    code: extracted.code,
+    values: {
+      code: extracted.code,
+    },
   }
 }
 
-function mapStatementToBlock(statement: ts.Statement, title: string | null): TestBlock | null {
-  if (!ts.isExpressionStatement(statement)) {
-    return null
-  }
-
-  const expression = unwrapAwait(statement.expression)
-
-  return (
-    parseGotoBlock(expression, title) ??
-    parseClickBlock(expression, title) ??
-    parseFillBlock(expression, title) ??
-    parseExpectUrlBlock(expression, title)
-  )
-}
-
-function unwrapAwait(expression: ts.Expression): ts.Expression {
-  return ts.isAwaitExpression(expression) ? expression.expression : expression
-}
-
-function parseGotoBlock(expression: ts.Expression, title: string | null): GotoUrlBlock | null {
-  if (!ts.isCallExpression(expression)) {
-    return null
-  }
-
-  if (
-    !ts.isPropertyAccessExpression(expression.expression) ||
-    expression.expression.name.text !== 'goto' ||
-    !ts.isIdentifier(expression.expression.expression) ||
-    expression.expression.expression.text !== 'page'
-  ) {
-    return null
-  }
-
-  const url = getStringArgument(expression.arguments[0])
-  if (url === null) {
-    return null
-  }
-
-  return {
-    id: crypto.randomUUID(),
-    title: title ?? '',
-    kind: 'goto_url',
-    url,
-  }
-}
-
-function parseClickBlock(expression: ts.Expression, title: string | null): ClickElementBlock | null {
-  if (!ts.isCallExpression(expression)) {
-    return null
-  }
-
-  if (
-    !ts.isPropertyAccessExpression(expression.expression) ||
-    expression.expression.name.text !== 'click'
-  ) {
-    return null
-  }
-
-  const selector = parseSelectorExpression(expression.expression.expression)
-  if (!selector) {
-    return null
-  }
-
-  return {
-    id: crypto.randomUUID(),
-    title: title ?? '',
-    kind: 'click_element',
-    selector,
-  }
-}
-
-function parseFillBlock(expression: ts.Expression, title: string | null): FillFieldBlock | null {
-  if (!ts.isCallExpression(expression)) {
-    return null
-  }
-
-  if (
-    !ts.isPropertyAccessExpression(expression.expression) ||
-    expression.expression.name.text !== 'fill'
-  ) {
-    return null
-  }
-
-  const selector = parseSelectorExpression(expression.expression.expression)
-  const value = getStringArgument(expression.arguments[0])
-
-  if (!selector || value === null) {
-    return null
-  }
-
-  return {
-    id: crypto.randomUUID(),
-    title: title ?? '',
-    kind: 'fill_field',
-    selector,
-    value,
-  }
-}
-
-function parseExpectUrlBlock(expression: ts.Expression, title: string | null): ExpectUrlBlock | null {
-  if (!ts.isCallExpression(expression)) {
-    return null
-  }
-
-  if (
-    !ts.isPropertyAccessExpression(expression.expression) ||
-    expression.expression.name.text !== 'toHaveURL'
-  ) {
-    return null
-  }
-
-  const target = expression.expression.expression
-  if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression) || target.expression.text !== 'expect') {
-    return null
-  }
-
-  const actual = target.arguments[0]
-  if (!actual || !ts.isIdentifier(actual) || actual.text !== 'page') {
-    return null
-  }
-
-  const url = getStringArgument(expression.arguments[0])
-  if (url === null) {
-    return null
-  }
-
-  return {
-    id: crypto.randomUUID(),
-    title: title ?? '',
-    kind: 'expect_url',
-    url,
-  }
-}
-
-function parseSelectorExpression(expression: ts.Expression): SelectorSpec | null {
-  if (!ts.isCallExpression(expression) || !ts.isPropertyAccessExpression(expression.expression)) {
-    return null
-  }
-
-  const property = expression.expression.name.text
-  const owner = expression.expression.expression
-
-  if (!ts.isIdentifier(owner) || owner.text !== 'page') {
-    return null
-  }
-
-  switch (property) {
-    case 'getByRole': {
-      const role = getStringArgument(expression.arguments[0])
-      if (role === null) {
-        return null
-      }
-
-      const name = getRoleNameOption(expression.arguments[1])
-      return {
-        strategy: 'role',
-        value: role,
-        name: name ?? undefined,
-      }
-    }
-    case 'getByText': {
-      const value = getStringArgument(expression.arguments[0])
-      return value === null ? null : { strategy: 'text', value }
-    }
-    case 'getByLabel': {
-      const value = getStringArgument(expression.arguments[0])
-      return value === null ? null : { strategy: 'label', value }
-    }
-    case 'getByTestId': {
-      const value = getStringArgument(expression.arguments[0])
-      return value === null ? null : { strategy: 'test_id', value }
-    }
-    case 'locator': {
-      const value = getStringArgument(expression.arguments[0])
-      return value === null ? null : { strategy: 'css', value }
-    }
-    default:
-      return null
-  }
-}
-
-function getRoleNameOption(node: ts.Expression | undefined): string | null {
-  if (!node || !ts.isObjectLiteralExpression(node)) {
-    return null
-  }
-
-  for (const property of node.properties) {
-    if (
-      ts.isPropertyAssignment(property) &&
-      ts.isIdentifier(property.name) &&
-      property.name.text === 'name'
-    ) {
-      return getStringArgument(property.initializer)
-    }
-  }
-
-  return null
-}
-
-function getStringArgument(node: ts.Node | undefined): string | null {
-  if (!node) {
-    return null
-  }
-
-  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-    return node.text
-  }
-
-  return null
-}
-
-function renderBody(blocks: TestBlock[], eol: string): string {
+function renderBody(
+  blocks: TestBlock[],
+  definitions: ServerBlockDefinition[],
+  eol: string,
+  context: ServerBlockContext = {}
+): string {
   if (blocks.length === 0) {
     return ''
   }
 
+  const definitionsByKind = new Map(definitions.map((definition) => [definition.kind, definition] as const))
   return blocks
-    .map((block) => indentBlock(renderBlock(block), eol, '  '))
+    .map((block) => indentBlock(renderBlock(block, definitionsByKind, context), eol, '  '))
     .join(eol)
 }
 
@@ -717,42 +476,21 @@ function renderCallback(template: TestEditorTemplate, body: string, eol: string)
   return `${asyncPrefix}(${params}) => {${body ? `${eol}${body}${eol}` : eol}}`
 }
 
-function renderBlock(block: TestBlock): string {
-  const titleComment = ` // ${sanitiseTitle(block.title)}`
-
-  switch (block.kind) {
-    case 'goto_url':
-      return `await page.goto(${quoteString(block.url)});${titleComment}`
-    case 'click_element':
-      return `await ${renderSelector(block.selector)}.click();${titleComment}`
-    case 'fill_field':
-      return `await ${renderSelector(block.selector)}.fill(${quoteString(block.value)});${titleComment}`
-    case 'expect_url':
-      return `await expect(page).toHaveURL(${quoteString(block.url)});${titleComment}`
-    case 'raw_code':
-      if (block.code.trim().length === 0) {
-        return `// ${sanitiseTitle(block.title)}`
-      }
-      return `// ${sanitiseTitle(block.title)}\n${block.code}`
+function renderBlock(
+  block: TestBlock,
+  definitionsByKind: Map<string, ServerBlockDefinition>,
+  context: ServerBlockContext
+): string {
+  const definition = definitionsByKind.get(block.kind)
+  if (definition) {
+    return definition.render(block, context)
   }
-}
 
-function renderSelector(selector: SelectorSpec): string {
-  switch (selector.strategy) {
-    case 'role':
-      if (selector.name && selector.name.trim().length > 0) {
-        return `page.getByRole(${quoteString(selector.value)}, { name: ${quoteString(selector.name)} })`
-      }
-      return `page.getByRole(${quoteString(selector.value)})`
-    case 'text':
-      return `page.getByText(${quoteString(selector.value)})`
-    case 'label':
-      return `page.getByLabel(${quoteString(selector.value)})`
-    case 'test_id':
-      return `page.getByTestId(${quoteString(selector.value)})`
-    case 'css':
-      return `page.locator(${quoteString(selector.value)})`
+  const code = typeof block.values['code'] === 'string' ? block.values['code'] : ''
+  if (code.trim().length === 0) {
+    return `// ${sanitiseTitle(block.title)}`
   }
+  return `// ${sanitiseTitle(block.title)}\n${code}`
 }
 
 function quoteString(value: string): string {
@@ -769,4 +507,8 @@ function indentBlock(block: string, eol: string, indent: string): string {
     .split('\n')
     .map((line) => (line.length > 0 ? `${indent}${line}` : indent))
     .join(eol)
+}
+
+function sanitiseTitle(title: string): string {
+  return title.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim()
 }

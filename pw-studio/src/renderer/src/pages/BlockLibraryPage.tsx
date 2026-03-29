@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type {
+  BlockDefinition,
   BlockDisplayConfig,
+  BlockFieldSchema,
+  BlockFieldValue,
   BlockLibraryProjectState,
   BlockTemplate,
   IpcEnvelope,
@@ -56,6 +59,11 @@ export function BlockLibraryPage(): JSX.Element {
 
     return state.templates.find((template) => template.id === selectedTemplateId) ?? null
   }, [selectedTemplateId, state])
+
+  const definitionsByKind = useMemo(
+    () => new Map((state?.definitions ?? []).map((definition) => [definition.kind, definition] as const)),
+    [state]
+  )
 
   useEffect(() => {
     if (!selectedTemplate) {
@@ -160,20 +168,24 @@ export function BlockLibraryPage(): JSX.Element {
   }
 
   function handleCreateTemplate(): void {
+    const firstDefinition = state?.definitions[0]
+    if (!firstDefinition) {
+      return
+    }
+
     const nextName = createUniqueTemplateName(state?.templates ?? [])
     const nextDraft: DraftTemplate = {
       id: slugify(nextName),
       name: nextName,
       description: '',
-      category: 'Custom',
-      block: {
-        kind: 'goto_url',
-        url: 'https://example.com/',
-      },
+      category: firstDefinition.category,
+      block: createDefaultBlock(firstDefinition),
       display: {
-        label: nextName,
-        detailSource: 'url',
-        separator: ': ',
+        label: firstDefinition.name,
+        detailSource: firstDefinition.display?.detailSource ?? 'value',
+        separator: firstDefinition.display?.separator ?? ': ',
+        quoteDetail: firstDefinition.display?.quoteDetail,
+        hideTitle: firstDefinition.display?.hideTitle,
       },
     }
 
@@ -186,6 +198,9 @@ export function BlockLibraryPage(): JSX.Element {
       <div className="page-header">
         <h2>Block Library</h2>
         <div className="page-header-actions">
+          <button className="btn btn-secondary btn-sm" onClick={() => navigate('/settings/plugins')}>
+            Manage Plugins
+          </button>
           <button className="btn btn-secondary btn-sm" onClick={() => navigate('/settings')}>
             Back to Settings
           </button>
@@ -259,9 +274,7 @@ export function BlockLibraryPage(): JSX.Element {
                 onClick={() => setSelectedTemplateId(template.id)}
               >
                 <span className="block-library-list-title">{template.name}</span>
-                <span className="block-library-list-meta">
-                  {template.category} · {template.builtIn ? 'Built-in' : 'Custom'}
-                </span>
+                <span className="block-library-list-meta">{template.category} - {template.builtIn ? 'Built-in' : 'Custom'}</span>
               </button>
             ))}
           </div>
@@ -287,7 +300,7 @@ export function BlockLibraryPage(): JSX.Element {
                           display: {
                             ...draft.display,
                             label: draft.display?.label === draft.name ? name : draft.display?.label ?? name,
-                            detailSource: draft.display?.detailSource ?? getDefaultDetailSource(draft.block.kind),
+                            detailSource: draft.display?.detailSource ?? getDefaultDetailSource(definitionsByKind.get(draft.block.kind)),
                           },
                         })
                       }}
@@ -317,27 +330,36 @@ export function BlockLibraryPage(): JSX.Element {
                     <select
                       className="form-select"
                       value={draft.block.kind}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const definition = definitionsByKind.get(event.target.value)
+                        if (!definition) {
+                          return
+                        }
+
                         setDraft({
                           ...draft,
-                          block: createDefaultBlock(event.target.value as TestBlockTemplate['kind']),
+                          category: definition.category,
+                          block: createDefaultBlock(definition),
                           display: {
-                            label: draft.name,
-                            detailSource: getDefaultDetailSource(event.target.value as TestBlockTemplate['kind']),
-                            separator: ': ',
+                            label: definition.name,
+                            detailSource: getDefaultDetailSource(definition),
+                            separator: definition.display?.separator ?? ': ',
+                            quoteDetail: definition.display?.quoteDetail,
+                            hideTitle: definition.display?.hideTitle,
                           },
                         })
-                      }
+                      }}
                     >
-                      <option value="goto_url">Go to URL</option>
-                      <option value="click_element">Click element</option>
-                      <option value="fill_field">Fill field</option>
-                      <option value="expect_url">Expect URL</option>
-                      <option value="raw_code">Raw code</option>
+                      {(state?.definitions ?? []).map((definition) => (
+                        <option key={definition.kind} value={definition.kind}>
+                          {definition.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
                   <TemplateBlockFields
+                    definition={definitionsByKind.get(draft.block.kind)}
                     block={draft.block}
                     onChange={(block) => setDraft({ ...draft, block })}
                   />
@@ -352,7 +374,7 @@ export function BlockLibraryPage(): JSX.Element {
                           ...draft,
                           display: {
                             label: event.target.value,
-                            detailSource: draft.display?.detailSource ?? getDefaultDetailSource(draft.block.kind),
+                            detailSource: draft.display?.detailSource ?? getDefaultDetailSource(definitionsByKind.get(draft.block.kind)),
                             quoteDetail: draft.display?.quoteDetail,
                             hideTitle: draft.display?.hideTitle,
                             separator: draft.display?.separator,
@@ -367,7 +389,7 @@ export function BlockLibraryPage(): JSX.Element {
                       Detail source
                       <select
                         className="form-select"
-                        value={draft.display?.detailSource ?? getDefaultDetailSource(draft.block.kind)}
+                        value={draft.display?.detailSource ?? getDefaultDetailSource(definitionsByKind.get(draft.block.kind))}
                         onChange={(event) =>
                           setDraft({
                             ...draft,
@@ -381,7 +403,7 @@ export function BlockLibraryPage(): JSX.Element {
                           })
                         }
                       >
-                        {getDetailOptions(draft.block.kind).map((option) => (
+                        {getDetailOptions(definitionsByKind.get(draft.block.kind)).map((option) => (
                           <option key={option} value={option}>
                             {option}
                           </option>
@@ -399,7 +421,7 @@ export function BlockLibraryPage(): JSX.Element {
                             ...draft,
                             display: {
                               label: draft.display?.label ?? draft.name,
-                              detailSource: draft.display?.detailSource ?? getDefaultDetailSource(draft.block.kind),
+                              detailSource: draft.display?.detailSource ?? getDefaultDetailSource(definitionsByKind.get(draft.block.kind)),
                               quoteDetail: draft.display?.quoteDetail,
                               hideTitle: draft.display?.hideTitle,
                               separator: event.target.value as BlockDisplayConfig['separator'],
@@ -422,7 +444,7 @@ export function BlockLibraryPage(): JSX.Element {
                           ...draft,
                           display: {
                             label: draft.display?.label ?? draft.name,
-                            detailSource: draft.display?.detailSource ?? getDefaultDetailSource(draft.block.kind),
+                            detailSource: draft.display?.detailSource ?? getDefaultDetailSource(definitionsByKind.get(draft.block.kind)),
                             quoteDetail: event.target.checked,
                             hideTitle: draft.display?.hideTitle,
                             separator: draft.display?.separator,
@@ -442,7 +464,7 @@ export function BlockLibraryPage(): JSX.Element {
                           ...draft,
                           display: {
                             label: draft.display?.label ?? draft.name,
-                            detailSource: draft.display?.detailSource ?? getDefaultDetailSource(draft.block.kind),
+                            detailSource: draft.display?.detailSource ?? getDefaultDetailSource(definitionsByKind.get(draft.block.kind)),
                             quoteDetail: draft.display?.quoteDetail,
                             hideTitle: event.target.checked,
                             separator: draft.display?.separator,
@@ -483,44 +505,105 @@ export function BlockLibraryPage(): JSX.Element {
 }
 
 function TemplateBlockFields({
+  definition,
   block,
   onChange,
 }: {
+  definition?: BlockDefinition
   block: TestBlockTemplate
   onChange: (block: TestBlockTemplate) => void
 }): JSX.Element {
-  switch (block.kind) {
-    case 'goto_url':
+  if (!definition) {
+    return <p>Unknown block definition.</p>
+  }
+
+  return (
+    <>
+      {definition.fields.map((field) => (
+        <TemplateFieldEditor
+          key={field.key}
+          field={field}
+          value={block.values[field.key]}
+          onChange={(value) =>
+            onChange({
+              ...block,
+              values: {
+                ...block.values,
+                [field.key]: value,
+              },
+            })
+          }
+        />
+      ))}
+    </>
+  )
+}
+
+function TemplateFieldEditor({
+  field,
+  value,
+  onChange,
+}: {
+  field: BlockFieldSchema
+  value: BlockFieldValue | undefined
+  onChange: (value: BlockFieldValue) => void
+}): JSX.Element {
+  switch (field.type) {
+    case 'textarea':
       return (
         <div className="form-group">
-          <label>Default URL</label>
-          <input value={block.url} onChange={(event) => onChange({ ...block, url: event.target.value })} />
+          <label>{field.label}</label>
+          <textarea
+            rows={field.rows ?? 6}
+            value={getStringValue(value)}
+            onChange={(event) => onChange(event.target.value)}
+          />
         </div>
       )
-    case 'expect_url':
+    case 'select':
       return (
         <div className="form-group">
-          <label>Default expected URL</label>
-          <input value={block.url} onChange={(event) => onChange({ ...block, url: event.target.value })} />
+          <label>{field.label}</label>
+          <select
+            className="form-select"
+            value={getStringValue(value)}
+            onChange={(event) => onChange(event.target.value)}
+          >
+            {(field.options ?? []).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
       )
-    case 'click_element':
-      return <TemplateSelectorEditor selector={block.selector} onChange={(selector) => onChange({ ...block, selector })} />
-    case 'fill_field':
+    case 'checkbox':
       return (
-        <>
-          <TemplateSelectorEditor selector={block.selector} onChange={(selector) => onChange({ ...block, selector })} />
-          <div className="form-group">
-            <label>Default value</label>
-            <input value={block.value} onChange={(event) => onChange({ ...block, value: event.target.value })} />
-          </div>
-        </>
+        <label className="block-library-checkbox">
+          <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
+          {field.label}
+        </label>
       )
-    case 'raw_code':
+    case 'selector':
+      return (
+        <TemplateSelectorEditor
+          selector={getSelectorValue(value) ?? { strategy: 'role', value: 'button', name: '' }}
+          onChange={onChange}
+        />
+      )
+    case 'test_case':
       return (
         <div className="form-group">
-          <label>Default raw code</label>
-          <textarea rows={6} value={block.code} onChange={(event) => onChange({ ...block, code: event.target.value })} />
+          <label>{field.label}</label>
+          <div className="settings-value">Source tests are selected in the visual editor per project.</div>
+        </div>
+      )
+    case 'text':
+    default:
+      return (
+        <div className="form-group">
+          <label>{field.label}</label>
+          <input value={getStringValue(value)} onChange={(event) => onChange(event.target.value)} />
         </div>
       )
   }
@@ -584,6 +667,7 @@ function stripManagedTemplate(template: ManagedBlockTemplate): BlockTemplate {
     name: template.name,
     description: template.description,
     category: template.category,
+    pluginId: template.pluginId,
     block: template.block,
     display: template.display,
   }
@@ -610,45 +694,90 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '') || 'custom-block'
 }
 
-function createDefaultBlock(kind: TestBlockTemplate['kind']): TestBlockTemplate {
-  switch (kind) {
-    case 'goto_url':
-      return { kind, url: 'https://example.com/' }
-    case 'click_element':
-      return { kind, selector: { strategy: 'role', value: 'button', name: 'Submit' } }
-    case 'fill_field':
-      return { kind, selector: { strategy: 'label', value: 'Email' }, value: 'user@example.com' }
-    case 'expect_url':
-      return { kind, url: 'https://example.com/dashboard' }
-    case 'raw_code':
-      return { kind, code: "await expect(page.getByText('Done')).toBeVisible();" }
+function createDefaultBlock(definition: BlockDefinition): TestBlockTemplate {
+  const values: Record<string, BlockFieldValue> = {}
+
+  for (const field of definition.fields) {
+    values[field.key] = getDefaultFieldValue(field)
+  }
+
+  return { kind: definition.kind, values }
+}
+
+function getDefaultFieldValue(field: BlockFieldSchema): BlockFieldValue {
+  switch (field.type) {
+    case 'checkbox':
+      return false
+    case 'selector':
+      return { strategy: 'role', value: 'button', name: '' }
+    case 'test_case':
+      return null
+    case 'select':
+      return field.options?.[0]?.value ?? ''
+    case 'textarea':
+    case 'text':
+    default:
+      return ''
   }
 }
 
-function getDefaultDetailSource(kind: TestBlockTemplate['kind']): BlockDisplayConfig['detailSource'] {
-  switch (kind) {
-    case 'goto_url':
-    case 'expect_url':
-      return 'url'
-    case 'click_element':
-      return 'selector.name'
-    case 'fill_field':
-      return 'selector.value'
-    case 'raw_code':
-      return 'code'
-  }
+function getDefaultDetailSource(definition?: BlockDefinition): BlockDisplayConfig['detailSource'] {
+  return definition?.display?.detailSource ?? 'value'
 }
 
-function getDetailOptions(kind: TestBlockTemplate['kind']): BlockDisplayConfig['detailSource'][] {
-  switch (kind) {
-    case 'goto_url':
-    case 'expect_url':
-      return ['url']
-    case 'click_element':
-      return ['selector.name', 'selector.value']
-    case 'fill_field':
-      return ['selector.value', 'value', 'selector.name']
-    case 'raw_code':
-      return ['code']
+function getDetailOptions(definition?: BlockDefinition): BlockDisplayConfig['detailSource'][] {
+  if (!definition) {
+    return ['value']
   }
+
+  const options = new Set<BlockDisplayConfig['detailSource']>()
+  for (const field of definition.fields) {
+    if (field.type === 'selector') {
+      options.add('selector.name')
+      options.add('selector.value')
+      continue
+    }
+
+    if (field.type === 'test_case') {
+      options.add('test.title')
+      continue
+    }
+
+    if (field.key === 'url') {
+      options.add('url')
+      continue
+    }
+
+    if (field.key === 'code') {
+      options.add('code')
+      continue
+    }
+
+    if (field.key === 'value') {
+      options.add('value')
+      continue
+    }
+  }
+
+  if (options.size === 0) {
+    options.add('value')
+  }
+
+  return [...options]
+}
+
+function getStringValue(value: BlockFieldValue | undefined): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function getSelectorValue(value: BlockFieldValue | undefined): SelectorSpec | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  if ('strategy' in value && 'value' in value) {
+    return value as SelectorSpec
+  }
+
+  return null
 }

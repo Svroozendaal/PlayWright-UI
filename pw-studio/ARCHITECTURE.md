@@ -1,71 +1,119 @@
-# PW Studio — Architecture
+# PW Studio - Architecture
 
 ## Overview
 
-PW Studio is structured in four layers around a local web runtime:
+PW Studio is a local-first Playwright orchestration platform with a plugin-first backend. The browser UI is a client of the local server, not a privileged runtime.
 
 ```text
-┌───────────────────────────────┐
-│          Browser UI           │  React + TypeScript
-│   Pages, Components, Hooks    │  BrowserRouter, no Node access
-├───────────────────────────────┤
-│        API Client Layer       │  fetch + WebSocket
-│   ApiEnvelope + useSocket     │  shared route and event constants
-├───────────────────────────────┤
-│      Local Server Layer       │  Express + TypeScript
-│   Routes, Services, Plugins   │  all business logic here
-├───────────────────────────────┤
-│       System / OS Layer       │  SQLite, keytar, chokidar
-│   File system, child_process  │  Playwright binary spawn
-└───────────────────────────────┘
+Browser UI -> API client + WebSocket -> Local server -> Filesystem / SQLite / Playwright / OS keychain
 ```
 
-## Layer Responsibilities
+## Core Layers
 
-### Browser UI
+### Renderer
 
-- Displays the UI and handles user interaction.
-- Talks to the backend via the fetch client and shared WebSocket hook.
-- Has no direct access to Node.js, filesystem, or database APIs.
+- React SPA with `BrowserRouter`
+- Uses `api.invoke(...)` compatibility calls over HTTP
+- Uses a shared WebSocket hook for push events
+- Contains the code editor, visual block editor, recorder pages, run views, and plugin management views
 
-### API Client Layer
+### Shared Contract Layer
 
-- Wraps HTTP calls in `ApiEnvelope<T>`.
-- Maintains a singleton WebSocket connection.
-- Maps server push events into React subscriptions.
+- `src/shared/types/ipc.ts`
+- Defines `ApiEnvelope<T>`, route constants, event constants, plugin summaries, block definitions, and domain models
+- Keeps the temporary `IPC` compatibility map for frontend calls
 
-### Local Server Layer
+### Server
 
-- `ServiceContainer`: dependency injection for long-lived services and runtime helpers.
-- `routes/`: one route module per domain.
-- `services/`: project registry, health, file watching, indexing, runs, artifacts, settings, secrets, environments, recorder, dashboard.
-- `plugins/`: optional in-process extensions.
-- `openapi.ts`: generated API contract.
+- Express server with route registry, envelope middleware, and OpenAPI generation
+- Service container for long-lived business services
+- WebSocket broadcaster plus internal `EventEmitter`
+- Plugin runtime and loader
 
-### System Layer
+### Runtime Integrations
 
-- **SQLite (`better-sqlite3`)**: persists projects, runs, results, artifact policies, and settings.
-- **`keytar`**: OS keychain for secrets, no plaintext fallback.
-- **chokidar**: file watching with debounce for index and cache invalidation.
-- **`child_process`**: spawns Playwright for test runs and codegen.
+- SQLite for projects, runs, results, settings, and artefact policy
+- `keytar` for secrets
+- `chokidar` for filesystem watching
+- local Playwright binary for runs and codegen
 
-## Transport Model
+## Plugin-First Runtime
 
-- HTTP endpoints live under `/api`
-- Push events use `/ws`
-- All route responses use `ApiEnvelope<T>`
-- Shared constants define routes, events, and error codes
+Core PW Studio now exposes extension points instead of hardcoding system-specific behaviour.
 
-## Database
+Runtime services can register:
 
-The database lives in the local app-data directory:
+- block definitions
+- block templates
+- recorder transforms
+- project setup hooks
+- routes
+- UI metadata
 
-- Windows: `%APPDATA%/pw-studio/pw-studio.db`
-- macOS: `~/Library/Application Support/pw-studio/pw-studio.db`
-- Linux: `~/.config/pw-studio/pw-studio.db`
+Built-in visual blocks go through the same registry path as external plugins. This keeps the core generic and lets plugins add new authoring primitives without changing the core editor contracts.
 
-Migrations are append-only and run at server start before the app begins serving requests.
+### Plugin Discovery
 
-## Full Specification
+Plugins are discovered from:
 
-See `.app-info/docs/PW_STUDIO_BLUEPRINT.md` for the complete architecture blueprint, including routes, event flow, database rules, plugin boundaries, and build phases.
+- `~/.pw-studio/plugins`
+- optional configured extra directories
+- `pw-studio/plugins` inside this repo for shipped local plugins
+
+### Project Enablement
+
+Plugin installation is app-wide. Enablement is project-specific and stored in:
+
+```text
+.pw-studio/plugins/<plugin-id>.json
+```
+
+Plugins can scaffold additional project files when enabled.
+
+## Visual Test Authoring
+
+The visual editor is an authoring layer only. The `.spec.ts` file remains the only persisted and executable source of truth.
+
+The editor supports:
+
+- loading an existing `test(...)` into canonical blocks
+- editing supported statements through typed blocks
+- keeping unsupported code as raw code blocks
+- saving back into the selected test in the source file
+- appending a new test to an existing test file
+
+Block state is also cached locally for faster reloads, but execution always uses the saved code file.
+
+## Block Library
+
+The block library page is global and file-backed. It combines:
+
+- core built-in block templates
+- plugin-contributed block templates
+- custom templates stored in app data
+
+Projects only control which templates are enabled for that project.
+
+## Mendix Plugin
+
+The shipped Mendix plugin currently adds:
+
+- a recorder normaliser for brittle Mendix cell clicks
+- helper scaffolding in `tests/support/mendix-pointers.ts`
+- a project map file for container hints
+- a Mendix-specific visual block for `mx.clickRowCell(...)`
+
+This is the first plugin on top of the generic runtime, not a special case in core.
+
+## Security Model
+
+- Bind HTTP and WebSocket to `127.0.0.1`
+- Keep file, process, and secret access on the server
+- Validate request bodies and route params at the boundary
+- Use the OS keychain through `keytar`
+
+## Main Documents
+
+- Blueprint: `../.app-info/docs/PW_STUDIO_BLUEPRINT.md`
+- Product overview: `../.app-info/app/OVERVIEW.md`
+- Feature registry: `../.app-info/features/FEATURES.md`

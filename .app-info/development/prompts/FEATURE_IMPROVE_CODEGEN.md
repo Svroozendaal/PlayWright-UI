@@ -1,23 +1,30 @@
-# FEATURE — Improve Codegen
+# FEATURE - Improve Codegen
 
 ## Goal
 
-Improve recorder output and generated test ergonomics on top of the web-based recorder flow.
+Improve recorder output and generated test ergonomics on top of the local web runtime.
 
-## Dependencies
+## Implemented Scope
 
-- Recorder routes and WebSocket status updates are already present
-- Explorer file editing is already present
+- Recorder output refinement after codegen save
+- Promotion of repeated values and selectors into extracted metadata
+- Post-recording suggestions in the UI
+- Visual test editor that maps supported code into blocks
+- Local visual-document caching for faster reloads
+- Block titles written back into code comments for stable block recovery
 
-## Focus Areas
+## Current Rules
 
-1. Refine generated test structure
-2. Promote reusable variables and selectors
-3. Strip redundant metadata
-4. Surface post-recording suggestions in the UI
+- The saved Playwright file remains the only executable source of truth.
+- Visual blocks are an authoring layer, not a second runtime format.
+- Unsupported code remains editable through raw code blocks.
+- Additional system-specific refinement should now be added through plugins and recorder transforms where possible.
 
-## Rules
+## Follow-On Work
 
-- Use the shared API client and WebSocket hooks
-- Keep generated file save flow browser-based
-- Treat this as a follow-on feature, not a foundation task
+Future work for this feature area should focus on:
+
+1. broader block coverage
+2. better code-to-block heuristics
+3. richer plugin-provided recorder transforms
+4. improved preview and review UX after recording

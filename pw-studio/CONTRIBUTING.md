@@ -3,85 +3,75 @@
 ## Development Setup
 
 ```bash
-# Clone the repository
 git clone <repo-url>
 cd pw-studio
-
-# Install dependencies
 npm install
-
-# Start local server + Vite
 npm run dev
 ```
 
-## Build Instructions
+## Validation
 
 ```bash
-# Type check
 npm run typecheck
-
-# Build the SPA and server
 npm run build
-
-# Start the built app
-npm start
 ```
 
-## Directory Structure
+## Project Shape
 
 ```text
 pw-studio/
-├── src/
-│   ├── server/                # Express server runtime
-│   │   ├── db/                # SQLite database, migrations
-│   │   ├── middleware/        # envelope + validation helpers
-│   │   ├── plugins/           # plugin loading and activation
-│   │   ├── routes/            # route registrations (one file per domain)
-│   │   ├── services/          # business logic services
-│   │   ├── utils/             # Playwright binary detection, config reader
-│   │   ├── ws.ts              # WebSocket server
-│   │   └── index.ts           # app entry point
-│   ├── renderer/              # React UI
-│   │   ├── public/            # static assets and PWA manifest
-│   │   └── src/
-│   │       ├── api/           # fetch client and socket hooks
-│   │       ├── pages/         # route pages
-│   │       ├── components/    # reusable UI components
-│   │       ├── App.tsx        # router setup
-│   │       ├── App.css        # global styles
-│   │       └── main.tsx       # React entry point
-│   └── shared/                # types shared between server and renderer
-│       └── types/
-│           └── ipc.ts         # envelope, route constants, event constants, domain types
-├── sample-project/            # example Playwright project shipped with the app
-├── vite.config.ts             # renderer build config
-├── tsconfig.json              # base TypeScript config
-├── tsconfig.server.json       # server TypeScript config
-└── tsconfig.web.json          # renderer TypeScript config
+|-- plugins/                 # shipped local plugins
+|-- src/
+|   |-- server/
+|   |   |-- db/
+|   |   |-- middleware/
+|   |   |-- plugins/        # loader, runtime, core registrations
+|   |   |-- routes/
+|   |   |-- services/
+|   |   |-- utils/
+|   |   |-- index.ts
+|   |   `-- ws.ts
+|   |-- renderer/
+|   |   |-- public/
+|   |   `-- src/
+|   |       |-- api/
+|   |       |-- components/
+|   |       `-- pages/
+|   `-- shared/
+|       `-- types/
+`-- sample-project/
 ```
 
-For the full architecture, see `ARCHITECTURE.md` and the blueprint at `.app-info/docs/PW_STUDIO_BLUEPRINT.md`.
+## Contribution Rules
 
-## How to Add a New Service
+- Use UK English in documentation.
+- Keep Playwright execution on the local binary, not `npx`.
+- Treat the `.spec.ts` file as the only runnable source of truth.
+- Add system-specific behaviour through plugins where possible.
+- Register new block kinds through the plugin runtime, not editor-side hardcoded switches.
+- Keep per-project plugin state file-backed under `.pw-studio/plugins/`.
 
-1. Create `src/server/services/YourService.ts` with constructor-injected dependencies.
-2. Add the service to `ServiceContainer` in `src/server/services/ServiceContainer.ts`.
-3. Wire it up in `createServices()`.
+## Adding Core Features
 
-## How to Add a New Route
+### Add a route
 
-1. Add the route constant to `src/shared/types/ipc.ts` under `API_ROUTES`.
-2. Create or update a route file in `src/server/routes/`.
-3. Register the route from `src/server/routes/index.ts`.
-4. Return `ApiEnvelope<T>` and use shared `ERROR_CODES`.
-5. Add the schema to the route registry so it also appears in OpenAPI.
+1. Add the route constant in `src/shared/types/ipc.ts`.
+2. Add or update the route file in `src/server/routes/`.
+3. Register it from `src/server/routes/index.ts`.
+4. Validate inputs at the route boundary.
 
-## Conventions
+### Add a plugin capability
 
-- **UK English** in all documentation.
-- Use the **local Playwright binary** (`node_modules/.bin/playwright`), never `npx`.
-- `--reporter=json` is the standard parseable output.
-- All secrets use the **OS keychain** via `keytar`, with no plaintext fallback.
-- API responses use the **envelope pattern** (`ApiEnvelope<T>`).
-- Always use `path.join()` or `path.resolve()` for filesystem paths.
-- Bind the local server to `127.0.0.1`.
+1. Extend `src/server/plugins/runtime.ts`.
+2. Keep the capability generic enough for multiple plugins.
+3. Register built-in behaviour through `src/server/plugins/core.ts` where needed.
+4. Document the new extension point in the blueprint and architecture docs.
+
+### Add a new block kind
+
+Prefer a plugin.
+
+1. Register a `BlockDefinition` and optional template through the plugin runtime.
+2. Implement server-side parse/render logic in the plugin or core registration.
+3. Ensure the block maps back to normal Playwright code.
+4. Update the block library documentation if the block is user-facing.

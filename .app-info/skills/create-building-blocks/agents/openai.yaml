@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Building Blocks"
+  short_description: "Add PW Studio visual block kinds safely"
+  default_prompt: "Use $create-building-blocks to add a new PW Studio visual block kind and library template."

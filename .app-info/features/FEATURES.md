@@ -1,78 +1,70 @@
-# FEATURE REGISTRY — PW Studio v1
+# FEATURE REGISTRY - PW Studio
 
-## Phase 1 — Foundation
-
-| Feature | Status | Notes |
-|---|---|---|
-| Express server + React SPA | planned | |
-| SQLite + migrations system | planned | |
-| REST API + WebSocket + API client | planned | |
-| API route constants | planned | |
-| Project registry (create/import/list) | planned | |
-| Basic app settings | planned | |
-
-## Phase 2 — Project Lifecycle + Health
+## Foundation
 
 | Feature | Status | Notes |
 |---|---|---|
-| Project creation wizard (with conflict check) | planned | |
-| Template generation | planned | |
-| Project open flow | planned | |
-| Health checks with cache strategy | planned | |
-| Playwright version detection | planned | |
-| Health Panel + Force Run escape | planned | |
+| Express server + React SPA | complete | Local browser UI hosted by the Node server |
+| SQLite + migrations | complete | Core project, run, artefact, and settings persistence |
+| REST API + WebSocket transport | complete | Shared envelope and event contracts |
+| OpenAPI generation | complete | Exposed at `/api/openapi.json` |
 
-## Phase 3 — Explorer
+## Projects + Health
 
 | Feature | Status | Notes |
 |---|---|---|
-| chokidar file watching | planned | |
-| ProjectIndexService (full rebuild) | planned | |
-| File tree UI | planned | |
-| Test file detection | planned | |
-| Regex test case extraction | planned | |
-| Parse warnings | planned | |
+| Project creation wizard | complete | Includes native directory chooser |
+| Existing project import | complete | Supports real Playwright projects |
+| Playwright config summary | complete | Surfaces `testDir`, projects, and output directory |
+| Health checks | complete | Cached health model with project-level refresh |
 
-## Phase 4 — Run Engine
+## Explorer + Editing
 
 | Feature | Status | Notes |
 |---|---|---|
-| Local binary detection | planned | |
-| CLI command builder | planned | |
-| Single active run (spawn) | planned | |
-| Log streaming | planned | |
-| Cancel flow (task kill / SIGTERM to SIGKILL) | planned | |
-| Run history | planned | |
-| Run detail basics | planned | |
+| File tree and watcher refresh | complete | Uses `chokidar` and project indexing |
+| File reading and saving | complete | Browser code editor writes back to project files |
+| Test-case discovery | complete | Stable `TestCaseRef` for selected tests |
+| Visual block editor | complete | Authoring layer that writes normal Playwright code back to the file |
+| Visual document cache | complete | Cached locally, but execution still uses saved code |
 
-## Phase 5 — Artifact Layer
+## Runs + Artefacts
 
 | Feature | Status | Notes |
 |---|---|---|
-| ArtifactService | planned | |
-| File artifact policies (migration 3) | planned | |
-| Artifact policy to CLI flags mapping | planned | |
-| Rerun failed tests | planned | |
-| Run detail artifacts tab | planned | |
+| Run orchestration | complete | File, folder, and test-case execution |
+| Headed mode and options | complete | Existing run pipeline preserved |
+| Log streaming | complete | WebSocket push events |
+| Run history and detail | complete | Results, reports, traces, and reruns |
+| Artefact policy management | complete | Project and file-level behaviour |
+| Run comparison | complete | Compare result sets between runs |
 
-## Phase 6 — Environments + Secrets + Recorder
-
-| Feature | Status | Notes |
-|---|---|---|
-| EnvironmentService + watcher invalidation | planned | |
-| SecretsService (`keytar`) | planned | |
-| Temporary run overrides | planned | |
-| RecorderService (codegen) | planned | |
-
-## Phase 7 — Packaging + Polish
+## Environments + Secrets + Recorder
 
 | Feature | Status | Notes |
 |---|---|---|
-| `npm` package + bundled local runtime | planned | |
-| Path audit (no hardcoded paths) | planned | |
-| `ApiEnvelope.error` per service | planned | |
-| SQLite location in Settings | planned | |
-| Documentation | planned | |
-| Sample project | planned | |
-| Plugin system | planned | |
-| REST API for AI/MCP integration | planned | |
+| Environment management | complete | Project-level environments with overrides |
+| Keychain-backed secrets | complete | `keytar` only |
+| Recorder start/stop/save | complete | Native directory chooser and save path flow |
+| Recorder code refinement | complete | Generic recorder transform pipeline |
+| Post-recording suggestions | complete | Suggestions and extracted values surfaced in the UI |
+
+## Block Library + Plugins
+
+| Feature | Status | Notes |
+|---|---|---|
+| Global block library | complete | File-backed custom template management |
+| Project template enablement | complete | Per-project availability filtering |
+| Plugin runtime | complete | Generic registries for blocks, transforms, and setup hooks |
+| Plugin manager | complete | Global installed-plugin view |
+| Project integrations page | complete | Per-project plugin enablement |
+| Mendix Portable Workflow plugin | complete | Optional shipped plugin for recorder and block extensions |
+
+## Packaging + Platform
+
+| Feature | Status | Notes |
+|---|---|---|
+| `npm` install/start flow | complete | Standard local runtime path |
+| Bundled runtime | complete | Zipped Node runtime packaging |
+| PWA manifest | complete | Installable browser app metadata |
+| Documentation set | complete | Blueprint, product docs, public docs, and skill registry updated |

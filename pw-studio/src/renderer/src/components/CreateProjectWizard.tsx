@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RegisteredProject, WizardParams } from '../../../shared/types/ipc'
 import { api } from '../api/client'
-import { FolderPicker } from './FolderPicker'
 
 type Step = 1 | 2 | 3 | 4
 
@@ -12,6 +11,16 @@ const BROWSERS = [
   { id: 'webkit', label: 'WebKit' },
 ]
 
+/**
+ * Render the multi-step project creation wizard.
+ *
+ * Params:
+ * onClose - Callback invoked when the modal should close.
+ * onCreated - Callback invoked after successful project creation.
+ *
+ * Returns:
+ * Project creation wizard modal element.
+ */
 export function CreateProjectWizard({
   onClose,
   onCreated,
@@ -22,7 +31,6 @@ export function CreateProjectWizard({
   const [step, setStep] = useState<Step>(1)
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [showFolderPicker, setShowFolderPicker] = useState(false)
 
   // Step 1
   const [projectName, setProjectName] = useState('')
@@ -37,28 +45,85 @@ export function CreateProjectWizard({
   const [includePageObjects, setIncludePageObjects] = useState(false)
   const [includeFixtures, setIncludeFixtures] = useState(false)
 
+  /**
+   * Add or remove a browser target from the project scaffold selection.
+   *
+   * Params:
+   * id - Browser identifier to toggle.
+   *
+   * Returns:
+   * Nothing.
+   */
   const toggleBrowser = (id: string): void => {
     setBrowsers((prev) =>
       prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id]
     )
   }
 
+  /**
+   * Determine whether the current wizard step has enough input to continue.
+   *
+   * Returns:
+   * `true` when the current step is complete enough for progression.
+   */
   const canProceed = (): boolean => {
     if (step === 1) return !!projectName.trim() && !!rootPath.trim()
     if (step === 2) return browsers.length > 0
     return true
   }
 
+  /**
+   * Advance the wizard to the next step after clearing any inline error.
+   *
+   * Returns:
+   * Nothing.
+   */
   const handleNext = (): void => {
     setError(null)
     if (step < 4) setStep((step + 1) as Step)
   }
 
+  /**
+   * Return the wizard to the previous step after clearing any inline error.
+   *
+   * Returns:
+   * Nothing.
+   */
   const handleBack = (): void => {
     setError(null)
     if (step > 1) setStep((step - 1) as Step)
   }
 
+  /**
+   * Open the operating system folder chooser and store the selected project root path.
+   *
+   * Returns:
+   * Promise that resolves when the browse flow completes.
+   */
+  const handleBrowseForRootPath = async (): Promise<void> => {
+    setError(null)
+
+    const result = await api.openDirectoryDialog({
+      startPath: rootPath || undefined,
+      title: 'Choose Project Folder',
+    })
+
+    if (result.error) {
+      setError(result.error.message)
+      return
+    }
+
+    if (result.payload) {
+      setRootPath(result.payload)
+    }
+  }
+
+  /**
+   * Submit the completed wizard state to create a new Playwright project.
+   *
+   * Returns:
+   * Promise that resolves when creation has finished or failed.
+   */
   const handleCreate = async (): Promise<void> => {
     setError(null)
     setCreating(true)
@@ -125,7 +190,7 @@ export function CreateProjectWizard({
               <label>Project Folder</label>
               <div className="path-input">
                 <input type="text" value={rootPath} readOnly placeholder="Select a folder..." />
-                <button className="btn btn-secondary" onClick={() => setShowFolderPicker(true)}>
+                <button className="btn btn-secondary" onClick={() => void handleBrowseForRootPath()}>
                   Browse
                 </button>
               </div>
@@ -245,18 +310,6 @@ export function CreateProjectWizard({
             </button>
           )}
         </div>
-
-        {showFolderPicker && (
-          <FolderPicker
-            title="Choose Project Folder"
-            startPath={rootPath || undefined}
-            onClose={() => setShowFolderPicker(false)}
-            onSelect={(selectedPath) => {
-              setRootPath(selectedPath)
-              setShowFolderPicker(false)
-            }}
-          />
-        )}
       </div>
     </div>
   )

@@ -42,6 +42,7 @@ export function Sidebar({ project, health, hasActiveRun }: SidebarProps): JSX.El
     { label: 'Recorder', icon: '\u23FA', path: `${base}/recorder` },
     { label: 'Environments', icon: '\u{1F310}', path: `${base}/environments` },
     { label: 'Flaky Tests', icon: '\u26A0', path: `${base}/flaky` },
+    { label: 'Integrations', icon: '\u{1F9E9}', path: `${base}/integrations` },
   ]
 
   /**

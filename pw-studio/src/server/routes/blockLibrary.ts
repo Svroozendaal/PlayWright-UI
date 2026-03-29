@@ -9,9 +9,24 @@ const selectorSchema = z.object({
   name: z.string().optional(),
 })
 
+const testReferenceSchema = z.object({
+  filePath: z.string(),
+  ordinal: z.number().int().nonnegative(),
+  testTitle: z.string(),
+})
+
+const blockFieldValueSchema = z.union([
+  z.string(),
+  z.boolean(),
+  z.number(),
+  z.null(),
+  selectorSchema,
+  testReferenceSchema,
+])
+
 const displayConfigSchema = z.object({
   label: z.string().min(1),
-  detailSource: z.enum(['url', 'value', 'selector.value', 'selector.name', 'code']),
+  detailSource: z.enum(['url', 'value', 'selector.value', 'selector.name', 'test.title', 'code']),
   quoteDetail: z.boolean().optional(),
   hideTitle: z.boolean().optional(),
   separator: z.enum([': ', ' ']).optional(),
@@ -22,30 +37,12 @@ const blockTemplateSchema = z.object({
   name: z.string().min(1),
   description: z.string(),
   category: z.string().min(1),
+  pluginId: z.string().min(1).optional(),
   display: displayConfigSchema.optional(),
-  block: z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('raw_code'),
-      code: z.string(),
-    }),
-    z.object({
-      kind: z.literal('goto_url'),
-      url: z.string(),
-    }),
-    z.object({
-      kind: z.literal('click_element'),
-      selector: selectorSchema,
-    }),
-    z.object({
-      kind: z.literal('fill_field'),
-      selector: selectorSchema,
-      value: z.string(),
-    }),
-    z.object({
-      kind: z.literal('expect_url'),
-      url: z.string(),
-    }),
-  ]),
+  block: z.object({
+    kind: z.string().min(1),
+    values: z.record(z.string(), blockFieldValueSchema),
+  }),
 })
 
 const saveTemplatesBodySchema = z.object({

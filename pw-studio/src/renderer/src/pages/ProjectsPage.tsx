@@ -4,15 +4,25 @@ import { IPC } from '../../../shared/types/ipc'
 import type { IpcEnvelope, RegisteredProject } from '../../../shared/types/ipc'
 import { api } from '../api/client'
 import { CreateProjectWizard } from '../components/CreateProjectWizard'
-import { FolderPicker } from '../components/FolderPicker'
 
+/**
+ * Render the project registry landing page with create and import actions.
+ *
+ * Returns:
+ * Projects page element.
+ */
 export function ProjectsPage(): JSX.Element {
   const navigate = useNavigate()
   const [projects, setProjects] = useState<RegisteredProject[]>([])
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showImportPicker, setShowImportPicker] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  /**
+   * Fetch the current project registry from the local API.
+   *
+   * Returns:
+   * Promise that resolves when the in-memory project list has been refreshed.
+   */
   const loadProjects = useCallback(async () => {
     const result = await api.invoke<RegisteredProject[]>(IPC.PROJECTS_LIST)
     const envelope = result as IpcEnvelope<RegisteredProject[]>
@@ -25,9 +35,17 @@ export function ProjectsPage(): JSX.Element {
     loadProjects()
   }, [loadProjects])
 
+  /**
+   * Import an existing Playwright project from a selected filesystem path.
+   *
+   * Params:
+   * rootPath - Absolute project directory chosen by the user.
+   *
+   * Returns:
+   * Promise that resolves when the import flow finishes.
+   */
   const handleImport = async (rootPath: string): Promise<void> => {
     setError(null)
-    setShowImportPicker(false)
     const result = await api.invoke<RegisteredProject>(IPC.PROJECTS_IMPORT, { rootPath })
     const envelope = result as IpcEnvelope<RegisteredProject>
 
@@ -39,12 +57,54 @@ export function ProjectsPage(): JSX.Element {
     await loadProjects()
   }
 
+  /**
+   * Open the native operating system folder chooser for the import flow.
+   *
+   * Returns:
+   * Promise that resolves when the browse and optional import flow completes.
+   */
+  const handleBrowseForImport = async (): Promise<void> => {
+    setError(null)
+
+    const result = await api.openDirectoryDialog({
+      title: 'Import Project Folder',
+    })
+
+    if (result.error) {
+      setError(result.error.message)
+      return
+    }
+
+    if (result.payload) {
+      await handleImport(result.payload)
+    }
+  }
+
+  /**
+   * Remove a project registration without deleting files from disk.
+   *
+   * Params:
+   * e - Click event from the remove button.
+   * id - Registered project identifier to remove.
+   *
+   * Returns:
+   * Promise that resolves when the registry has been refreshed.
+   */
   const handleRemove = async (e: React.MouseEvent, id: string): Promise<void> => {
     e.stopPropagation()
     await api.invoke(IPC.PROJECTS_REMOVE, { id })
     await loadProjects()
   }
 
+  /**
+   * Navigate to the selected project dashboard.
+   *
+   * Params:
+   * id - Registered project identifier to open.
+   *
+   * Returns:
+   * Nothing.
+   */
   const handleOpenProject = (id: string): void => {
     navigate(`/project/${id}`)
   }
@@ -63,7 +123,7 @@ export function ProjectsPage(): JSX.Element {
           <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
             New Project
           </button>
-          <button className="btn btn-secondary" onClick={() => setShowImportPicker(true)}>
+          <button className="btn btn-secondary" onClick={() => void handleBrowseForImport()}>
             Import Project
           </button>
           <button className="btn btn-secondary" onClick={() => navigate('/settings/block-library')}>
@@ -111,14 +171,6 @@ export function ProjectsPage(): JSX.Element {
               setShowCreateModal(false)
               loadProjects()
             }}
-          />
-        )}
-
-        {showImportPicker && (
-          <FolderPicker
-            title="Import Project Folder"
-            onClose={() => setShowImportPicker(false)}
-            onSelect={(selectedPath) => void handleImport(selectedPath)}
           />
         )}
       </div>

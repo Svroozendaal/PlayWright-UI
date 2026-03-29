@@ -14,44 +14,28 @@ const selectorSpecSchema = z.object({
   name: z.string().optional(),
 })
 
-const testBlockSchema = z.discriminatedUnion('kind', [
-  z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    templateId: z.string().min(1).optional(),
-    kind: z.literal('raw_code'),
-    code: z.string(),
-  }),
-  z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    templateId: z.string().min(1).optional(),
-    kind: z.literal('goto_url'),
-    url: z.string(),
-  }),
-  z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    templateId: z.string().min(1).optional(),
-    kind: z.literal('click_element'),
-    selector: selectorSpecSchema,
-  }),
-  z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    templateId: z.string().min(1).optional(),
-    kind: z.literal('fill_field'),
-    selector: selectorSpecSchema,
-    value: z.string(),
-  }),
-  z.object({
-    id: z.string().min(1),
-    title: z.string().min(1),
-    templateId: z.string().min(1).optional(),
-    kind: z.literal('expect_url'),
-    url: z.string(),
-  }),
+const testReferenceSchema = z.object({
+  filePath: z.string(),
+  ordinal: z.number().int().nonnegative(),
+  testTitle: z.string(),
+})
+
+const blockFieldValueSchema = z.union([
+  z.string(),
+  z.boolean(),
+  z.number(),
+  z.null(),
+  selectorSpecSchema,
+  testReferenceSchema,
 ])
+
+const testBlockSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  templateId: z.string().min(1).optional(),
+  kind: z.string().min(1),
+  values: z.record(z.string(), blockFieldValueSchema),
+})
 
 const templateSchema = z.object({
   callee: z.string().min(1),
@@ -139,9 +123,10 @@ export const testEditorRoutes: RouteDefinition[] = [
     schemas: { body: syncEditorBodySchema },
     handler: ({ services, body }) => {
       const payload = body as z.infer<typeof syncEditorBodySchema>
-      getProjectOrThrow(services, payload.projectId)
+      const project = getProjectOrThrow(services, payload.projectId)
 
       return services.testEditor.syncCode(
+        project.rootPath,
         payload.filePath,
         payload.mode,
         payload.code,
@@ -176,7 +161,10 @@ export const testEditorRoutes: RouteDefinition[] = [
       }
 
       const project = getProjectOrThrow(services, projectId)
-      return services.testEditor.getLibraryTemplates(project.rootPath)
+      return {
+        ...services.testEditor.getLibraryTemplates(project.rootPath),
+        availableTestCases: services.projectIndex.listAvailableTestCases(projectId, project.rootPath),
+      }
     },
   },
 ]

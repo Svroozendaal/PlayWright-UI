@@ -59,3 +59,21 @@ CONTEXT: Project-scoped navigation took a fixed 220px rail and always showed lab
 DECISION: Add a user-toggleable collapsed sidebar mode that reduces the rail to icon-only navigation and persist the preference in browser `localStorage`.
 RATIONALE: This keeps the existing information architecture intact while giving users a faster way to reclaim horizontal space without losing route discoverability or footer actions.
 ALTERNATIVES_REJECTED: Leave the sidebar permanently expanded; auto-collapse only at narrow breakpoints; replace the rail with a temporary drawer.
+
+## DECISION - UX-009 - 2026-03-29
+CONTEXT: PW Studio used an in-app folder browser for project creation, project import, and recorder output selection after the Electron-to-web migration removed native desktop dialogs.
+DECISION: Reintroduce native directory selection via a local server route that opens the operating system folder chooser and returns the selected absolute path to the renderer.
+RATIONALE: The browser runtime alone cannot provide a trusted absolute filesystem path from a native picker, but the backend still needs that path to create projects, import existing suites, and save recorder output. A local native-dialog bridge restores the expected Explorer/Finder experience without reverting to the in-app browser.
+ALTERNATIVES_REJECTED: Keep the in-app folder browser; use the browser File System Access API directly despite missing absolute paths; require users to type paths manually.
+
+## DECISION - ARCH-010 - 2026-03-29
+CONTEXT: PW Studio needed a sustainable way to add system-specific recorder transforms, helper-backed authoring blocks, and project setup behaviour without hardcoding one platform into core.
+DECISION: Refactor the runtime into a plugin-first architecture where recorder transforms, block definitions, block templates, and project setup hooks are registered through a shared plugin runtime, with installation app-wide and enablement stored per project in files.
+RATIONALE: This keeps core Playwright orchestration generic, allows multiple platform plugins to coexist, and lets system-specific features ship without repeated core refactors.
+ALTERNATIVES_REJECTED: Hardcode Mendix-specific logic into core services and editor logic; keep plugins limited to routes only; store plugin enablement in SQLite.
+
+## DECISION - DOC-011 - 2026-03-29
+CONTEXT: The application surface now includes the visual block editor, block library, plugin manager, project integrations, and a shipped Mendix plugin, but the documentation still largely described the earlier transport migration and baseline platform.
+DECISION: Rewrite the public docs, blueprint, product/config docs, feature registry, and memory logs to describe the current shipped application rather than the earlier migration state alone.
+RATIONALE: The repo should explain the platform users and contributors actually have, especially now that plugin-first and block-authoring workflows are part of the normal product.
+ALTERNATIVES_REJECTED: Leave the docs in migration-oriented form; document only the Mendix plugin and skip the core platform updates.

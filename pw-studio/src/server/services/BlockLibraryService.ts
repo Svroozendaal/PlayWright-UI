@@ -3,13 +3,17 @@ import path from 'path'
 import { z } from 'zod'
 import { ERROR_CODES } from '../../shared/types/ipc'
 import type {
+  BlockDefinition,
+  BlockFieldValue,
   BlockLibraryProjectState,
   BlockTemplate,
   ManagedBlockTemplate,
   SelectorSpec,
+  TestReferenceSpec,
   TestEditorLibraryPayload,
 } from '../../shared/types/ipc'
 import { ApiRouteError } from '../middleware/envelope'
+import type { PluginRuntimeService } from '../plugins/runtime'
 import { resolveUserDataPath } from '../utils/paths'
 
 const selectorSchema = z.object({
@@ -18,9 +22,24 @@ const selectorSchema = z.object({
   name: z.string().optional(),
 })
 
+const testReferenceSchema = z.object({
+  filePath: z.string(),
+  ordinal: z.number().int().nonnegative(),
+  testTitle: z.string(),
+})
+
+const blockFieldValueSchema: z.ZodType<BlockFieldValue> = z.union([
+  z.string(),
+  z.boolean(),
+  z.number(),
+  z.null(),
+  selectorSchema,
+  testReferenceSchema,
+])
+
 const displayConfigSchema = z.object({
   label: z.string().min(1),
-  detailSource: z.enum(['url', 'value', 'selector.value', 'selector.name', 'code']),
+  detailSource: z.enum(['url', 'value', 'selector.value', 'selector.name', 'test.title', 'code']),
   quoteDetail: z.boolean().optional(),
   hideTitle: z.boolean().optional(),
   separator: z.enum([': ', ' ']).optional(),
@@ -31,30 +50,12 @@ const customTemplateSchema = z.object({
   name: z.string().min(1),
   description: z.string(),
   category: z.string().min(1),
+  pluginId: z.string().min(1).optional(),
   display: displayConfigSchema.optional(),
-  block: z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('raw_code'),
-      code: z.string(),
-    }),
-    z.object({
-      kind: z.literal('goto_url'),
-      url: z.string(),
-    }),
-    z.object({
-      kind: z.literal('click_element'),
-      selector: selectorSchema,
-    }),
-    z.object({
-      kind: z.literal('fill_field'),
-      selector: selectorSchema,
-      value: z.string(),
-    }),
-    z.object({
-      kind: z.literal('expect_url'),
-      url: z.string(),
-    }),
-  ]),
+  block: z.object({
+    kind: z.string().min(1),
+    values: z.record(z.string(), blockFieldValueSchema),
+  }),
 })
 
 const projectConfigSchema = z.object({
@@ -62,24 +63,31 @@ const projectConfigSchema = z.object({
 })
 
 export class BlockLibraryService {
+  constructor(private readonly pluginRuntime: PluginRuntimeService) {}
+
   getEditorLibrary(rootPath?: string): TestEditorLibraryPayload {
-    const templates = this.listManagedTemplates()
+    const templates = this.listManagedTemplates(rootPath)
+    const definitions = this.listDefinitions(rootPath)
     const configuredIds = rootPath ? this.readProjectConfig(rootPath)?.includedTemplateIds ?? null : null
     const availableTemplateIds = configuredIds ?? templates.map((template) => template.id)
 
     return {
+      definitions,
       templates,
       availableTemplateIds: availableTemplateIds.filter((templateId, index, source) => {
         return index === source.indexOf(templateId) && templates.some((template) => template.id === templateId)
       }),
+      availableTestCases: [],
     }
   }
 
   getProjectState(rootPath?: string): BlockLibraryProjectState {
-    const templates = this.listManagedTemplates()
+    const templates = this.listManagedTemplates(rootPath)
+    const definitions = this.listDefinitions(rootPath)
     const configuredIds = rootPath ? this.readProjectConfig(rootPath)?.includedTemplateIds ?? null : null
 
     return {
+      definitions,
       templates,
       includedTemplateIds: configuredIds ?? templates.map((template) => template.id),
       globalTemplatesPath: this.getGlobalTemplatesPath(),
@@ -97,7 +105,12 @@ export class BlockLibraryService {
       )
     }
 
+    const definitions = this.getDefinitionMap()
+    const builtInTemplateIds = new Set(
+      this.pluginRuntime.getRegisteredTemplates().map((template) => template.id.trim().toLowerCase())
+    )
     const ids = new Set<string>()
+
     for (const template of result.data) {
       const normalised = template.id.trim().toLowerCase()
       if (ids.has(normalised)) {
@@ -116,6 +129,24 @@ export class BlockLibraryService {
         )
       }
 
+      const definition = definitions.get(template.block.kind)
+      if (!definition) {
+        throw new ApiRouteError(
+          ERROR_CODES.INVALID_INPUT,
+          `Unknown block kind for template "${template.id}": ${template.block.kind}.`,
+          400
+        )
+      }
+
+      const validationErrors = validateTemplateValues(definition, template.block.values)
+      if (validationErrors.length > 0) {
+        throw new ApiRouteError(
+          ERROR_CODES.INVALID_INPUT,
+          validationErrors.map((message) => `${template.id}: ${message}`).join('; '),
+          400
+        )
+      }
+
       ids.add(normalised)
     }
 
@@ -126,7 +157,7 @@ export class BlockLibraryService {
   }
 
   saveProjectState(rootPath: string, includedTemplateIds: string[]): BlockLibraryProjectState {
-    const templates = this.listManagedTemplates()
+    const templates = this.listManagedTemplates(rootPath)
     const validIds = new Set(templates.map((template) => template.id))
     const filteredIds = includedTemplateIds.filter((templateId, index, source) => {
       return validIds.has(templateId) && index === source.indexOf(templateId)
@@ -143,14 +174,35 @@ export class BlockLibraryService {
     return this.getProjectState(rootPath)
   }
 
-  private listManagedTemplates(): ManagedBlockTemplate[] {
+  private listManagedTemplates(rootPath?: string): ManagedBlockTemplate[] {
     return [
-      ...builtInTemplates.map((template) => ({ ...template, builtIn: true })),
-      ...this.readCustomTemplates().map((template) => ({ ...template, builtIn: false })),
+      ...(rootPath
+        ? this.pluginRuntime.getRegisteredTemplates(rootPath)
+        : this.pluginRuntime.getAllRegisteredTemplates())
+        .map((template) => ({ ...template, builtIn: true })),
+      ...this.readCustomTemplates(rootPath).map((template) => ({ ...template, builtIn: false })),
     ]
   }
 
-  private readCustomTemplates(): BlockTemplate[] {
+  private listDefinitions(rootPath?: string): BlockDefinition[] {
+    const definitions = rootPath
+      ? this.pluginRuntime.getAvailableBlockDefinitions(rootPath)
+      : this.pluginRuntime.getAllBlockDefinitions()
+
+    return definitions.map((definition) => ({
+      kind: definition.kind,
+      name: definition.name,
+      description: definition.description,
+      category: definition.category,
+      defaultTitle: definition.defaultTitle,
+      builtIn: definition.builtIn,
+      pluginId: definition.pluginId,
+      fields: definition.fields,
+      display: definition.display,
+    }))
+  }
+
+  private readCustomTemplates(rootPath?: string): BlockTemplate[] {
     const filePath = this.getGlobalTemplatesPath()
     if (!fs.existsSync(filePath)) {
       return []
@@ -160,7 +212,12 @@ export class BlockLibraryService {
       const raw = fs.readFileSync(filePath, 'utf8')
       const parsed = JSON.parse(raw)
       const result = z.array(customTemplateSchema).safeParse(parsed)
-      return result.success ? result.data : []
+      if (!result.success) {
+        return []
+      }
+
+      const definitions = new Set(this.listDefinitions(rootPath).map((definition) => definition.kind))
+      return result.data.filter((template) => definitions.has(template.block.kind))
     } catch {
       return []
     }
@@ -182,6 +239,10 @@ export class BlockLibraryService {
     }
   }
 
+  private getDefinitionMap(): Map<string, BlockDefinition> {
+    return new Map(this.listDefinitions().map((definition) => [definition.kind, definition] as const))
+  }
+
   private getGlobalTemplatesPath(): string {
     return resolveUserDataPath(path.join('block-library', 'templates.json'))
   }
@@ -191,99 +252,68 @@ export class BlockLibraryService {
   }
 }
 
-const builtInTemplates: BlockTemplate[] = [
-  {
-    id: 'goto-url',
-    name: 'Go to URL',
-    description: 'Navigate the page to a specific URL.',
-    category: 'Navigation',
-    display: {
-      label: 'Go to URL',
-      detailSource: 'url',
-      separator: ': ',
-    },
-    block: {
-      kind: 'goto_url',
-      url: 'https://example.com/',
-    },
-  },
-  {
-    id: 'click-link',
-    name: 'Click element',
-    description: 'Click a page element by role, text, label, test id, or CSS selector.',
-    category: 'Actions',
-    display: {
-      label: 'Click element',
-      detailSource: 'selector.name',
-      quoteDetail: true,
-      separator: ' ',
-    },
-    block: {
-      kind: 'click_element',
-      selector: createRoleSelector('link', 'Example'),
-    },
-  },
-  {
-    id: 'fill-field',
-    name: 'Fill field',
-    description: 'Fill an input field through a supported selector strategy.',
-    category: 'Actions',
-    display: {
-      label: 'Fill field',
-      detailSource: 'selector.value',
-      quoteDetail: true,
-      separator: ': ',
-    },
-    block: {
-      kind: 'fill_field',
-      selector: createTextSelector('Email'),
-      value: 'user@example.com',
-    },
-  },
-  {
-    id: 'expect-url',
-    name: 'Expect URL',
-    description: 'Assert that the browser is currently on a specific URL.',
-    category: 'Assertions',
-    display: {
-      label: 'Expect URL',
-      detailSource: 'url',
-      separator: ': ',
-    },
-    block: {
-      kind: 'expect_url',
-      url: 'https://example.com/dashboard',
-    },
-  },
-  {
-    id: 'raw-code',
-    name: 'Raw code',
-    description: 'Insert plain Playwright or TypeScript statements when no visual block exists yet.',
-    category: 'Advanced',
-    display: {
-      label: 'Raw code',
-      detailSource: 'code',
-    },
-    block: {
-      kind: 'raw_code',
-      code: "await expect(page.getByText('Done')).toBeVisible();",
-    },
-  },
-]
+function validateTemplateValues(
+  definition: BlockDefinition,
+  values: Record<string, BlockFieldValue>
+): string[] {
+  const errors: string[] = []
+  const allowedKeys = new Set(definition.fields.map((field) => field.key))
 
-const builtInTemplateIds = new Set(builtInTemplates.map((template) => template.id.toLowerCase()))
+  for (const field of definition.fields) {
+    const value = values[field.key]
+    if (field.required && isEmptyFieldValue(value)) {
+      errors.push(`Missing required value for "${field.key}"`)
+    }
 
-function createRoleSelector(role: string, name: string): SelectorSpec {
-  return {
-    strategy: 'role',
-    value: role,
-    name,
+    if (!isFieldTypeValid(field.type, value)) {
+      errors.push(`Invalid value for "${field.key}"`)
+    }
+  }
+
+  for (const key of Object.keys(values)) {
+    if (!allowedKeys.has(key)) {
+      errors.push(`Unknown field key "${key}"`)
+    }
+  }
+
+  return errors
+}
+
+function isEmptyFieldValue(value: BlockFieldValue | undefined): boolean {
+  return value === undefined || value === null || (typeof value === 'string' && value.trim().length === 0)
+}
+
+function isFieldTypeValid(type: BlockDefinition['fields'][number]['type'], value: BlockFieldValue | undefined): boolean {
+  if (value === undefined) {
+    return true
+  }
+
+  switch (type) {
+    case 'text':
+    case 'textarea':
+    case 'select':
+      return typeof value === 'string'
+    case 'checkbox':
+      return typeof value === 'boolean'
+    case 'selector':
+      return isSelectorSpec(value)
+    case 'test_case':
+      return value === null || isTestReferenceSpec(value)
   }
 }
 
-function createTextSelector(value: string): SelectorSpec {
-  return {
-    strategy: 'text',
-    value,
+function isSelectorSpec(value: BlockFieldValue): value is SelectorSpec {
+  if (!value || typeof value !== 'object') {
+    return false
   }
+
+  return 'strategy' in value && 'value' in value
+}
+
+function isTestReferenceSpec(value: BlockFieldValue): value is TestReferenceSpec {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  return 'filePath' in value && 'ordinal' in value && 'testTitle' in value
 }

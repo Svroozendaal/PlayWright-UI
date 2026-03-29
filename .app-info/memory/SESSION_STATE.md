@@ -11,9 +11,9 @@ OPEN_BLOCKERS: [none or details]
 
 ## LIVE_LOG
 
-CURRENT_SCOPE: Collapsible project navigation for the PW Studio web UI.
-ACTIVE_AGENT: Designer
-LAST_HANDOFF: Sidebar collapse update completed on 2026-03-29 with successful typecheck and production build.
+CURRENT_SCOPE: Refresh the full PW Studio documentation set and add a reusable app-specific skill for creating building blocks.
+ACTIVE_AGENT: Developer
+LAST_HANDOFF: Plugin-first runtime and the shipped Mendix Portable Workflow plugin were completed on 2026-03-29.
 OPEN_BLOCKERS: none
 
 ## HANDOFF - Developer - 2026-03-28
@@ -32,4 +32,16 @@ BLOCKERS: none
 STATUS: COMPLETE
 NEXT_AGENT: none
 SUMMARY: The project sidebar now supports a persistent collapsed state that reduces navigation to icon-only buttons while preserving active states, health visibility, settings access, and the back-to-projects action.
+BLOCKERS: none
+
+## HANDOFF - Developer - 2026-03-29
+STATUS: COMPLETE
+NEXT_AGENT: none
+SUMMARY: New project creation, project import, and recorder output folder selection now open the operating system's native directory chooser instead of the in-app filesystem browser. The local server exposes a native dialog route so the renderer still receives an absolute path the backend can use safely.
+BLOCKERS: none
+
+## HANDOFF - Developer - 2026-03-29
+STATUS: COMPLETE
+NEXT_AGENT: none
+SUMMARY: PW Studio documentation now reflects the current shipped platform, including the plugin-first runtime, visual block editor, global block library, project integrations, and the shipped Mendix plugin. An app-specific `create-building-blocks` skill was also added to guide future block and template work.
 BLOCKERS: none

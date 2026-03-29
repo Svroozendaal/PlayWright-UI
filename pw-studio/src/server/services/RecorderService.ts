@@ -9,7 +9,7 @@ import type {
   RecorderStatus,
   RecorderStatusEvent,
 } from '../../shared/types/ipc'
-import { refineGeneratedCode } from './CodegenRefiner'
+import type { PluginRuntimeService } from '../plugins/runtime'
 import { getPlaywrightBinary } from '../utils/playwrightBinary'
 
 function quoteArgsForShell(args: string[]): string[] {
@@ -28,9 +28,14 @@ export class RecorderService {
 
   private activeOptions: CodegenOptions | null = null
 
+  private activeRootPath: string | null = null
+
   private lastResult: RecorderSaveResult | null = null
 
-  constructor(publish: (channel: string, data: unknown) => void) {
+  constructor(
+    publish: (channel: string, data: unknown) => void,
+    private readonly pluginRuntime: PluginRuntimeService
+  ) {
     this.publish = publish
   }
 
@@ -81,6 +86,7 @@ export class RecorderService {
     proc.stderr?.setEncoding('utf8')
 
     this.activeProcess = proc
+    this.activeRootPath = rootPath
     this.activeOptions = options
     this.lastResult = null
     this.status = 'running'
@@ -103,6 +109,7 @@ export class RecorderService {
 
       if (exitCode !== 0 && exitCode !== null) {
         this.activeOptions = null
+        this.activeRootPath = null
         this.lastError = stderrBuffer.trim() || `Codegen exited with code ${exitCode}`
         this.status = 'idle'
         this.notifyStatus()
@@ -114,6 +121,7 @@ export class RecorderService {
         : null
 
       this.activeOptions = null
+      this.activeRootPath = null
       this.status = 'idle'
       this.notifyStatus(result ?? undefined)
     })
@@ -121,6 +129,7 @@ export class RecorderService {
     proc.on('error', (error: Error) => {
       this.activeProcess = null
       this.activeOptions = null
+      this.activeRootPath = null
       this.lastResult = null
       this.lastError = error.message
       this.status = 'idle'
@@ -154,6 +163,7 @@ export class RecorderService {
 
     this.activeProcess = null
     this.activeOptions = null
+    this.activeRootPath = null
     this.lastResult = null
     this.status = 'idle'
     this.notifyStatus()
@@ -173,24 +183,39 @@ export class RecorderService {
     }
 
     if (fs.existsSync(outputPath)) {
-      return this.buildRecorderResult({ outputPath })
+      return this.buildRecorderResult({ outputPath }, path.dirname(outputPath))
     }
     return null
   }
 
-  private buildRecorderResult(options: CodegenOptions): RecorderSaveResult | null {
+  private buildRecorderResult(options: CodegenOptions, rootPath = this.activeRootPath ?? path.dirname(options.outputPath)): RecorderSaveResult | null {
     if (!fs.existsSync(options.outputPath)) {
       return null
     }
 
     const originalContent = fs.readFileSync(options.outputPath, 'utf8')
-    const refined = refineGeneratedCode(originalContent, options)
+    const refined = this.pluginRuntime.applyRecorderTransforms({
+      rootPath,
+      outputPath: options.outputPath,
+      content: originalContent,
+      startUrl: options.startUrl,
+      browser: options.browser,
+    })
 
     if (refined.content !== originalContent) {
       fs.writeFileSync(options.outputPath, refined.content, 'utf8')
     }
 
-    const { content: _content, ...result } = refined
+    const result: RecorderSaveResult = {
+      outputPath: options.outputPath,
+      testTitle: refined.testTitle ?? path.basename(options.outputPath, path.extname(options.outputPath)),
+      transformed: refined.content !== originalContent,
+      actionCount: refined.appliedChanges?.length ?? 0,
+      appliedChanges: refined.appliedChanges ?? [],
+      extractions: refined.extractions ?? [],
+      suggestions: refined.suggestions ?? [],
+    }
+
     this.lastResult = result
     return result
   }

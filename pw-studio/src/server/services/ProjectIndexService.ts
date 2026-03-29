@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { ExplorerNode } from '../../shared/types/ipc'
+import type { AvailableTestCase, ExplorerNode } from '../../shared/types/ipc'
 import type { PlaywrightConfigService } from './PlaywrightConfigService'
 import { formatParseDiagnostics, parseTestSource } from '../utils/testEditorAst'
 
@@ -49,6 +49,14 @@ export class ProjectIndexService {
 
   getParseWarnings(projectId: string): ParseWarning[] {
     return this.warnings.get(projectId) ?? []
+  }
+
+  listAvailableTestCases(projectId: string, rootPath: string): AvailableTestCase[] {
+    const tree = this.getTree(projectId) ?? []
+    const options: AvailableTestCase[] = []
+
+    collectTestCases(tree, rootPath, options)
+    return options
   }
 }
 
@@ -161,6 +169,34 @@ function extractTestCases(
       children: [],
       parseState: 'warning',
       parseWarning: message,
+    }
+  }
+}
+
+function collectTestCases(
+  nodes: ExplorerNode[],
+  rootPath: string,
+  options: AvailableTestCase[]
+): void {
+  for (const node of nodes) {
+    if (node.type === 'testFile' && node.children) {
+      const relativePath = path.relative(rootPath, node.path).replace(/\\/g, '/')
+      for (const child of node.children) {
+        if (child.type !== 'testCase' || !child.testCaseRef) {
+          continue
+        }
+
+        options.push({
+          filePath: relativePath,
+          ordinal: child.testCaseRef.ordinal,
+          testTitle: child.testCaseRef.testTitle,
+          label: `${child.testCaseRef.testTitle} (${relativePath})`,
+        })
+      }
+    }
+
+    if (node.children && node.children.length > 0) {
+      collectTestCases(node.children, rootPath, options)
     }
   }
 }

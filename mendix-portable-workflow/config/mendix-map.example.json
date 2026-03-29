@@ -1,0 +1,8 @@
+{
+  "defaultContainer": "auto",
+  "contextToContainer": {
+    "trajecten::alle trajecten": "TrajectenGrid",
+    "gebruikers::overzicht": "UsersGrid"
+  }
+}
+

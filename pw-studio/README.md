@@ -1,61 +1,69 @@
 # PW Studio
 
-PW Studio is a local web application that wraps Playwright Test with a graphical user interface. It runs a local Node.js server and serves a browser UI on the same machine. It is an orchestration layer, not a replacement for Playwright.
+PW Studio is a local web application for Playwright Test. It runs a local Node.js server, serves a browser UI on the same machine, and keeps the `.spec.ts` files as the only executable source of truth.
 
-## Requirements
+## What It Does
 
-- **Node.js** >= 20
-- **npm** >= 10
-- **Playwright** >= 1.40 (installed per project)
-- **Modern browser** with WebSocket support
+- Creates and imports Playwright projects
+- Runs health checks against local Playwright setups
+- Indexes files, test files, and test cases
+- Edits files directly in the browser
+- Runs tests, streams logs, and stores results and artefacts
+- Records codegen flows and refines generated code
+- Provides a visual block editor that writes normal Playwright code back to the file
+- Supports a plugin-first architecture for system-specific tooling
 
-## Installation
+## Plugin Model
 
-### `npm`
+PW Studio core stays generic. Plugins can add:
 
-```bash
-npm install
-npm run build
-npm start
-```
+- Recorder transforms
+- Visual test blocks and block templates
+- Project setup hooks
+- Routes and backend capabilities
+- Plugin-specific integrations
 
-### Bundled local runtime
+The repo currently ships an optional `Mendix Portable Workflow` plugin that adds Mendix-specific recorder rewrites, helper scaffolding, and a Mendix block for `mx.clickRowCell(...)`.
 
-Unpack the bundled distribution, then run the provided start command from the package root.
+## Runtime Model
 
-## First Steps
-
-1. **Create a project** — click "New Project", choose a name and folder, select browsers, and PW Studio will scaffold a Playwright project with `npm install`.
-2. **Import an existing project** — click "Import Project" and use the in-app folder browser to select a folder that already contains a `playwright.config.ts`.
-3. **Check health** — the Health Panel shows whether Node, npm, Playwright, and browsers are correctly set up.
-4. **Run tests** — open the Explorer, pick a file or folder, and run it.
-5. **View results** — navigate to the Runs page to see history, logs, and test results.
+- Local server: Express + TypeScript
+- Browser UI: React + TypeScript
+- Realtime transport: WebSocket
+- Persistence: SQLite and file-backed project/plugin config
+- Secrets: `keytar`
+- Automation: local Playwright binary
 
 ## Development
 
 ```bash
-# Install dependencies
 npm install
-
-# Start local server + Vite
 npm run dev
+```
 
-# Type check
+Useful commands:
+
+```bash
 npm run typecheck
-
-# Build for production
 npm run build
-
-# Start the built server
 npm start
 ```
 
-## Screenshots
+## Main User Flows
 
-| Projects | Explorer | Run Detail |
-|----------|----------|------------|
-| Project list with create/import | File tree with test detection | Logs, results, and artifacts |
+1. Create or import a Playwright project.
+2. Check project health and configuration.
+3. Open Explorer to edit files, inspect test cases, or use the block editor.
+4. Run a file, folder, or test case and review logs, results, and artefacts.
+5. Use Recorder to generate code, then refine or convert it through block editing or plugin transforms.
+6. Manage plugins globally and enable them per project from Integrations.
+
+## Documentation
+
+- Architecture: `ARCHITECTURE.md`
+- Contributing: `CONTRIBUTING.md`
+- Full blueprint: `../.app-info/docs/PW_STUDIO_BLUEPRINT.md`
 
 ## Licence
 
-Private — all rights reserved.
+Private - all rights reserved.

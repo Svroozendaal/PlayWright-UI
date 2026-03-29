@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { IPC } from '../../../shared/types/ipc'
 import type {
+  AvailableTestCase,
+  BlockDefinition,
   BlockDisplayConfig,
+  BlockFieldSchema,
+  BlockFieldValue,
   BlockTemplate,
   IpcEnvelope,
   ManagedBlockTemplate,
@@ -12,6 +16,7 @@ import type {
   TestEditorDocument,
   TestEditorLibraryPayload,
   TestEditorMode,
+  TestReferenceSpec,
 } from '../../../shared/types/ipc'
 import { api } from '../api/client'
 import { CodeEditor } from './CodeEditor'
@@ -50,8 +55,10 @@ export function TestBlockEditor({
   const [savedDocument, setSavedDocument] = useState<TestEditorDocument | null>(null)
   const [codeDraft, setCodeDraft] = useState('')
   const [codeDirty, setCodeDirty] = useState(false)
+  const [definitions, setDefinitions] = useState<BlockDefinition[]>([])
   const [library, setLibrary] = useState<ManagedBlockTemplate[]>([])
   const [availableTemplateIds, setAvailableTemplateIds] = useState<string[]>([])
+  const [availableTestCases, setAvailableTestCases] = useState<AvailableTestCase[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [syncingCode, setSyncingCode] = useState(false)
@@ -88,8 +95,10 @@ export function TestBlockEditor({
 
       const libraryEnvelope = libraryResult as IpcEnvelope<TestEditorLibraryPayload>
       if (libraryEnvelope.payload) {
+        setDefinitions(libraryEnvelope.payload.definitions)
         setLibrary(libraryEnvelope.payload.templates)
         setAvailableTemplateIds(libraryEnvelope.payload.availableTemplateIds)
+        setAvailableTestCases(libraryEnvelope.payload.availableTestCases)
       }
 
       const documentEnvelope = documentResult as IpcEnvelope<TestEditorDocument>
@@ -128,10 +137,28 @@ export function TestBlockEditor({
     () => library.filter((template) => availableTemplateIds.includes(template.id)),
     [availableTemplateIds, library]
   )
+  const selectableTestCases = useMemo(() => {
+    return availableTestCases.filter((entry) => {
+      if (mode !== 'existing' || !testCaseRef) {
+        return true
+      }
+
+      const normalisedCurrent = filePath.replace(/\\/g, '/')
+      const normalisedEntry = entry.filePath.replace(/\\/g, '/')
+      const sameFile =
+        normalisedCurrent === normalisedEntry || normalisedCurrent.endsWith(`/${normalisedEntry}`)
+
+      return !(sameFile && entry.ordinal === testCaseRef.ordinal)
+    })
+  }, [availableTestCases, filePath, mode, testCaseRef])
   const libraryGroups = useMemo(() => groupLibraryByCategory(availableLibrary), [availableLibrary])
   const libraryById = useMemo(
     () => new Map(library.map((template) => [template.id, template] as const)),
     [library]
+  )
+  const definitionsByKind = useMemo(
+    () => new Map(definitions.map((definition) => [definition.kind, definition] as const)),
+    [definitions]
   )
 
   const updateDocument = (
@@ -145,7 +172,7 @@ export function TestBlockEditor({
 
       const next = updater(current)
       if (!options?.keepCodeDraft) {
-        setCodeDraft(renderDocumentPreview(next))
+        setCodeDraft(renderDocumentPreview(next, definitionsByKind))
         setCodeDirty(false)
         setCodeNotice(null)
       } else if (options?.notice !== undefined) {
@@ -182,6 +209,7 @@ export function TestBlockEditor({
     }
 
     setDocument(envelope.payload)
+    setSavedDocument((current) => current)
     setCodeDraft(envelope.payload.code)
     setCodeDirty(false)
     setCodeNotice(null)
@@ -260,12 +288,7 @@ export function TestBlockEditor({
           nextBlocks.splice(
             targetIndex,
             0,
-            createBlockFromTemplate(
-              dragState.template.block,
-              nextBlocks,
-              dragState.template.id,
-              dragState.template.name
-            )
+            createBlockFromTemplate(dragState.template.block, nextBlocks, definitionsByKind, dragState.template.id)
           )
         }
 
@@ -422,11 +445,11 @@ export function TestBlockEditor({
                     >
                       <div className="test-editor-block-header">
                         <div className="test-editor-block-copy">
-                          {shouldShowCompactTitle(block, libraryById) && (
-                            <div className="test-editor-block-title">{blockTitle(block)}</div>
+                          {shouldShowCompactTitle(block, libraryById, definitionsByKind) && (
+                            <div className="test-editor-block-title">{block.title}</div>
                           )}
                           <div className="test-editor-block-subtitle">
-                            {renderCompactSummary(block, libraryById)}
+                            {renderCompactSummary(block, libraryById, definitionsByKind)}
                           </div>
                         </div>
                         {blockPanelMode === 'edit' && (
@@ -454,6 +477,8 @@ export function TestBlockEditor({
                       {blockPanelMode === 'edit' && (
                         <BlockFields
                           block={block}
+                          definition={definitionsByKind.get(block.kind)}
+                          availableTestCases={selectableTestCases}
                           onChange={(nextBlock) =>
                             updateDocument(
                               (current) => ({
@@ -499,7 +524,7 @@ export function TestBlockEditor({
                         setDropIndex(null)
                       }}
                       onClick={() =>
-                        applyLibraryTemplate(template, codeDirty, updateDocument)
+                        applyLibraryTemplate(template, definitionsByKind, codeDirty, updateDocument)
                       }
                     >
                       <span className="test-editor-library-name">{template.name}</span>
@@ -539,6 +564,7 @@ export function TestBlockEditor({
 
 function applyLibraryTemplate(
   template: BlockTemplate,
+  definitionsByKind: Map<string, BlockDefinition>,
   codeDirty: boolean,
   updateDocument: (
     updater: (current: TestEditorDocument) => TestEditorDocument,
@@ -548,7 +574,7 @@ function applyLibraryTemplate(
   updateDocument(
     (current) => {
       const nextBlocks = [...current.blocks]
-      nextBlocks.push(createBlockFromTemplate(template.block, nextBlocks, template.id, template.name))
+      nextBlocks.push(createBlockFromTemplate(template.block, nextBlocks, definitionsByKind, template.id))
       return {
         ...current,
         blocks: nextBlocks,
@@ -563,68 +589,35 @@ function applyLibraryTemplate(
 function createBlockFromTemplate(
   template: TestBlockTemplate,
   existingBlocks: TestBlock[],
-  templateId?: string,
-  templateName?: string
+  definitionsByKind: Map<string, BlockDefinition>,
+  templateId?: string
 ): TestBlock {
+  const definition = definitionsByKind.get(template.kind)
   return {
-    ...template,
+    kind: template.kind,
+    values: { ...template.values },
     id: crypto.randomUUID(),
-    title: createUniqueBlockTitle(templateName ?? blockTitleFromKind(template.kind), existingBlocks),
+    title: createUniqueBlockTitle(definition?.defaultTitle ?? template.kind.replace(/_/g, ' '), existingBlocks),
     templateId,
-  } as TestBlock
-}
-
-function blockTitle(block: TestBlock): string {
-  return block.title
-}
-
-function blockTitleFromKind(kind: TestBlock['kind']): string {
-  switch (kind) {
-    case 'goto_url':
-      return 'go to url'
-    case 'click_element':
-      return 'click element'
-    case 'fill_field':
-      return 'fill field'
-    case 'expect_url':
-      return 'expect url'
-    case 'raw_code':
-      return 'raw code'
-  }
-}
-
-function blockKindLabel(block: TestBlock): string {
-  switch (block.kind) {
-    case 'goto_url':
-      return 'Go to URL'
-    case 'click_element':
-      return 'Click element'
-    case 'fill_field':
-      return 'Fill field'
-    case 'expect_url':
-      return 'Expect URL'
-    case 'raw_code':
-      return 'Raw code'
   }
 }
 
 function shouldShowCompactTitle(
   block: TestBlock,
-  libraryById: Map<string, BlockTemplate>
+  libraryById: Map<string, BlockTemplate>,
+  definitionsByKind: Map<string, BlockDefinition>
 ): boolean {
-  if (block.kind === 'raw_code') {
-    return true
-  }
-  return !resolveDisplayConfig(block, libraryById)?.hideTitle
+  return !resolveDisplayConfig(block, libraryById, definitionsByKind)?.hideTitle
 }
 
 function renderCompactSummary(
   block: TestBlock,
-  libraryById: Map<string, BlockTemplate>
+  libraryById: Map<string, BlockTemplate>,
+  definitionsByKind: Map<string, BlockDefinition>
 ): string {
-  const display = resolveDisplayConfig(block, libraryById)
+  const display = resolveDisplayConfig(block, libraryById, definitionsByKind)
   if (!display) {
-    return blockKindLabel(block)
+    return definitionsByKind.get(block.kind)?.name ?? block.kind
   }
 
   const detail = getDisplayDetail(block, display.detailSource)
@@ -633,11 +626,7 @@ function renderCompactSummary(
   }
 
   const formatted = display.quoteDetail ? `'${detail}'` : detail
-  if (display.label.length === 0) {
-    return formatted
-  }
-
-  if (display.detailSource === 'code') {
+  if (display.label.length === 0 || display.detailSource === 'code') {
     return formatted
   }
 
@@ -646,7 +635,8 @@ function renderCompactSummary(
 
 function resolveDisplayConfig(
   block: TestBlock,
-  libraryById: Map<string, BlockTemplate>
+  libraryById: Map<string, BlockTemplate>,
+  definitionsByKind: Map<string, BlockDefinition>
 ): BlockDisplayConfig | null {
   if (block.templateId) {
     const templateDisplay = libraryById.get(block.templateId)?.display
@@ -655,21 +645,23 @@ function resolveDisplayConfig(
     }
   }
 
-  return defaultDisplayByKind[block.kind] ?? null
+  return definitionsByKind.get(block.kind)?.display ?? null
 }
 
 function getDisplayDetail(block: TestBlock, source: BlockDisplayConfig['detailSource']): string {
   switch (source) {
     case 'url':
-      return 'url' in block ? block.url : ''
+      return getStringValue(block.values['url'])
     case 'value':
-      return 'value' in block ? block.value : ''
+      return getStringValue(block.values['value'])
     case 'selector.value':
-      return 'selector' in block ? block.selector.value : ''
+      return getSelectorValue(block.values['selector'])?.value ?? ''
     case 'selector.name':
-      return 'selector' in block ? block.selector.name ?? block.selector.value : ''
+      return getSelectorValue(block.values['selector'])?.name ?? getSelectorValue(block.values['selector'])?.value ?? ''
+    case 'test.title':
+      return getTestReferenceValue(block.values['target'])?.testTitle ?? ''
     case 'code':
-      return block.kind === 'raw_code' ? summariseRawCode(block.code) : ''
+      return summariseRawCode(getStringValue(block.values['code']))
   }
 }
 
@@ -703,74 +695,140 @@ function groupLibraryByCategory(templates: BlockTemplate[]): [string, BlockTempl
 
 function BlockFields({
   block,
+  definition,
+  availableTestCases,
   onChange,
 }: {
   block: TestBlock
+  definition?: BlockDefinition
+  availableTestCases: AvailableTestCase[]
   onChange: (block: TestBlock) => void
 }): JSX.Element {
-  switch (block.kind) {
-    case 'goto_url':
+  if (!definition) {
+    return <p className="detail-muted">No editor definition is available for this block kind.</p>
+  }
+
+  return (
+    <div className="test-editor-field-grid">
+      {definition.fields.map((field) => (
+        <FieldEditor
+          key={field.key}
+          field={field}
+          value={block.values[field.key]}
+          availableTestCases={availableTestCases}
+          onChange={(value) =>
+            onChange({
+              ...block,
+              values: {
+                ...block.values,
+                [field.key]: value,
+              },
+            })
+          }
+        />
+      ))}
+    </div>
+  )
+}
+
+function FieldEditor({
+  field,
+  value,
+  availableTestCases,
+  onChange,
+}: {
+  field: BlockFieldSchema
+  value: BlockFieldValue | undefined
+  availableTestCases: AvailableTestCase[]
+  onChange: (value: BlockFieldValue) => void
+}): JSX.Element {
+  switch (field.type) {
+    case 'textarea':
       return (
-        <div className="test-editor-field-grid">
-          <label>
-            URL
-            <input value={block.url} onChange={(event) => onChange({ ...block, url: event.target.value })} />
-          </label>
-        </div>
+        <label>
+          {field.label}
+          <textarea
+            className="test-editor-raw-code"
+            rows={field.rows ?? 4}
+            placeholder={field.placeholder}
+            value={getStringValue(value)}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </label>
       )
-    case 'expect_url':
+    case 'select':
       return (
-        <div className="test-editor-field-grid">
-          <label>
-            Expected URL
-            <input value={block.url} onChange={(event) => onChange({ ...block, url: event.target.value })} />
-          </label>
-        </div>
+        <label>
+          {field.label}
+          <select
+            className="form-select"
+            value={getStringValue(value)}
+            onChange={(event) => onChange(event.target.value)}
+          >
+            {(field.options ?? []).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
       )
-    case 'click_element':
+    case 'checkbox':
       return (
-        <div className="test-editor-field-grid">
-          <SelectorEditor selector={block.selector} onChange={(selector) => onChange({ ...block, selector })} />
-        </div>
+        <label className="block-library-checkbox">
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(event) => onChange(event.target.checked)}
+          />
+          {field.label}
+        </label>
       )
-    case 'fill_field':
+    case 'selector':
       return (
-        <div className="test-editor-field-grid">
-          <SelectorEditor selector={block.selector} onChange={(selector) => onChange({ ...block, selector })} />
-          <label>
-            Value
-            <input value={block.value} onChange={(event) => onChange({ ...block, value: event.target.value })} />
-          </label>
-        </div>
+        <SelectorEditor
+          label={field.label}
+          selector={getSelectorValue(value) ?? { strategy: 'role', value: 'button', name: '' }}
+          onChange={onChange}
+        />
       )
-    case 'raw_code':
+    case 'test_case':
       return (
-        <div className="test-editor-field-grid">
-          <label>
-            Code
-            <textarea
-              className="test-editor-raw-code"
-              value={block.code}
-              onChange={(event) => onChange({ ...block, code: event.target.value })}
-              rows={Math.max(4, block.code.split('\n').length)}
-            />
-          </label>
-        </div>
+        <TestCaseEditor
+          label={field.label}
+          value={getTestReferenceValue(value)}
+          availableTestCases={availableTestCases}
+          onChange={onChange}
+        />
+      )
+    case 'text':
+    default:
+      return (
+        <label>
+          {field.label}
+          <input
+            placeholder={field.placeholder}
+            value={getStringValue(value)}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </label>
       )
   }
 }
 
 function SelectorEditor({
+  label,
   selector,
   onChange,
 }: {
+  label: string
   selector: SelectorSpec
   onChange: (selector: SelectorSpec) => void
 }): JSX.Element {
   return (
     <div className="test-editor-selector-grid">
       <label>
-        Selector type
+        {label}
         <select
           className="form-select"
           value={selector.strategy}
@@ -812,6 +870,51 @@ function SelectorEditor({
   )
 }
 
+function TestCaseEditor({
+  label,
+  value,
+  availableTestCases,
+  onChange,
+}: {
+  label: string
+  value: TestReferenceSpec | null
+  availableTestCases: AvailableTestCase[]
+  onChange: (value: BlockFieldValue) => void
+}): JSX.Element {
+  const selectedKey = value ? `${value.filePath}::${value.ordinal}` : ''
+
+  return (
+    <label>
+      {label}
+      <select
+        className="form-select"
+        value={selectedKey}
+        onChange={(event) => {
+          const next = availableTestCases.find(
+            (entry) => `${entry.filePath}::${entry.ordinal}` === event.target.value
+          )
+          onChange(
+            next
+              ? {
+                  filePath: next.filePath,
+                  ordinal: next.ordinal,
+                  testTitle: next.testTitle,
+                }
+              : null
+          )
+        }}
+      >
+        <option value="">Select a test</option>
+        {availableTestCases.map((entry) => (
+          <option key={`${entry.filePath}::${entry.ordinal}`} value={`${entry.filePath}::${entry.ordinal}`}>
+            {entry.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 function DropZone({
   active,
   onDragOver,
@@ -836,8 +939,11 @@ function DropZone({
   )
 }
 
-function renderDocumentPreview(document: TestEditorDocument): string {
-  const body = document.blocks.map((block) => renderBlockPreview(block, '  ')).join('\n')
+function renderDocumentPreview(
+  document: TestEditorDocument,
+  definitionsByKind: Map<string, BlockDefinition>
+): string {
+  const body = document.blocks.map((block) => renderBlockPreview(block, definitionsByKind, '  ')).join('\n')
   const args = [quoteString(document.testTitle), ...document.template.extraArgs]
   const callback = renderCallbackPreview(document.template, body)
   args.push(callback)
@@ -856,23 +962,50 @@ function renderCallbackPreview(documentTemplate: TestEditorDocument['template'],
   return `${asyncPrefix}(${params}) => {\n${body}${body ? '\n' : ''}}`
 }
 
-function renderBlockPreview(block: TestBlock, indent: string): string {
+function renderBlockPreview(
+  block: TestBlock,
+  definitionsByKind: Map<string, BlockDefinition>,
+  indent: string
+): string {
+  const titleComment = ` // ${sanitiseBlockTitle(block.title)}`
   const raw = (() => {
-    const titleComment = ` // ${sanitiseBlockTitle(block.title)}`
     switch (block.kind) {
       case 'goto_url':
-        return `await page.goto(${quoteString(block.url)});${titleComment}`
+        return `await page.goto(${quoteString(getStringValue(block.values['url']))});${titleComment}`
       case 'click_element':
-        return `await ${renderSelectorPreview(block.selector)}.click();${titleComment}`
+        return `await ${renderSelectorPreview(getSelectorValue(block.values['selector']))}.click();${titleComment}`
       case 'fill_field':
-        return `await ${renderSelectorPreview(block.selector)}.fill(${quoteString(block.value)});${titleComment}`
+        return `await ${renderSelectorPreview(getSelectorValue(block.values['selector']))}.fill(${quoteString(getStringValue(block.values['value']))});${titleComment}`
       case 'expect_url':
-        return `await expect(page).toHaveURL(${quoteString(block.url)});${titleComment}`
-      case 'raw_code':
-        if (block.code.trim().length === 0) {
+        return `await expect(page).toHaveURL(${quoteString(getStringValue(block.values['url']))});${titleComment}`
+      case 'use_subflow': {
+        const target = getTestReferenceValue(block.values['target'])
+        const stepTitle = getStringValue(block.values['stepTitle']) || target?.testTitle || 'Run subflow'
+        const metadata = JSON.stringify(
+          target ?? {
+            filePath: '',
+            ordinal: 0,
+            testTitle: '',
+          }
+        )
+        return [
+          `await test.step(${quoteString(stepTitle)}, async () => {`,
+          `  // pw-studio-subflow: ${metadata}`,
+          '  // The selected subflow is expanded when the document is saved.',
+          `});${titleComment}`,
+        ].join('\n')
+      }
+      case 'raw_code': {
+        const code = getStringValue(block.values['code'])
+        if (code.trim().length === 0) {
           return `// ${sanitiseBlockTitle(block.title)}`
         }
-        return `// ${sanitiseBlockTitle(block.title)}\n${block.code}`
+        return `// ${sanitiseBlockTitle(block.title)}\n${code}`
+      }
+      case 'mx_click_row_cell':
+        return `await mx.clickRowCell(${getStringValue(block.values['scope']) || 'page'}, { valueHint: ${quoteString(getStringValue(block.values['value']))}, container: ${quoteString(getStringValue(block.values['container']) || 'auto')}, confidence: ${quoteString(getStringValue(block.values['confidence']) || 'medium')} });${titleComment}`
+      default:
+        return `// Unsupported block: ${definitionsByKind.get(block.kind)?.name ?? block.kind}`
     }
   })()
 
@@ -882,7 +1015,11 @@ function renderBlockPreview(block: TestBlock, indent: string): string {
     .join('\n')
 }
 
-function renderSelectorPreview(selector: SelectorSpec): string {
+function renderSelectorPreview(selector: SelectorSpec | null): string {
+  if (!selector) {
+    return `page.locator('')`
+  }
+
   switch (selector.strategy) {
     case 'role':
       if (selector.name && selector.name.trim().length > 0) {
@@ -900,6 +1037,34 @@ function renderSelectorPreview(selector: SelectorSpec): string {
   }
 }
 
+function getStringValue(value: BlockFieldValue | undefined): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function getSelectorValue(value: BlockFieldValue | undefined): SelectorSpec | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  if ('strategy' in value && 'value' in value) {
+    return value as SelectorSpec
+  }
+
+  return null
+}
+
+function getTestReferenceValue(value: BlockFieldValue | undefined): TestReferenceSpec | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  if ('filePath' in value && 'ordinal' in value && 'testTitle' in value) {
+    return value as TestReferenceSpec
+  }
+
+  return null
+}
+
 function quoteString(value: string): string {
   return `'${value
     .replace(/\\/g, '\\\\')
@@ -910,33 +1075,4 @@ function quoteString(value: string): string {
 
 function sanitiseBlockTitle(value: string): string {
   return value.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim()
-}
-
-const defaultDisplayByKind: Record<TestBlock['kind'], BlockDisplayConfig> = {
-  goto_url: {
-    label: 'Go to URL',
-    detailSource: 'url',
-    separator: ': ',
-  },
-  click_element: {
-    label: 'Click element',
-    detailSource: 'selector.name',
-    quoteDetail: true,
-    separator: ' ',
-  },
-  fill_field: {
-    label: 'Fill field',
-    detailSource: 'selector.value',
-    quoteDetail: true,
-    separator: ': ',
-  },
-  expect_url: {
-    label: 'Expect URL',
-    detailSource: 'url',
-    separator: ': ',
-  },
-  raw_code: {
-    label: 'Raw code',
-    detailSource: 'code',
-  },
 }

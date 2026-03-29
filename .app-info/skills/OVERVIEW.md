@@ -1,27 +1,25 @@
-# SKILLS — PW Studio (App-Specific)
+# SKILLS - PW Studio (App-Specific)
 
 ## Available Skills
 
-| Skill | Path | Used in Phases | Domain |
-|---|---|---|---|
-| Express + React Scaffold | `express-react-scaffold/SKILL.md` | 1 | Project setup, Vite, Node server, directory structure |
-| REST API + WebSocket | `rest-websocket-api/SKILL.md` | 1–7 | envelope pattern, routes, push events |
-| SQLite Migrations | `sqlite-migrations/SKILL.md` | 1, 2, 4, 5 | `better-sqlite3`, migration runner, schema |
-| Playwright Binary | `playwright-binary/SKILL.md` | 2, 4, 6 | Binary detection, spawn, version parsing |
-| Playwright Config Reader | `playwright-config-reader/SKILL.md` | 2, 3, 4 | Dynamic `testDir`, config extraction |
-| chokidar Watcher | `chokidar-watcher/SKILL.md` | 3, 6 | File watching, debouncing, triggers |
-| React Tree Component | `react-tree-component/SKILL.md` | 3 | Explorer tree, context menus, virtualisation |
-| Child Process Spawn | `child-process-spawn/SKILL.md` | 4, 6 | Windows spawn, `.cmd` handling, kill |
-| Playwright JSON Reporter | `playwright-json-reporter/SKILL.md` | 4, 5 | Report parsing, result mapping |
-| Artifact Policy Resolution | `artifact-policy-resolution/SKILL.md` | 5 | Policy cascade, CLI flag mapping |
-| OS Keychain Secrets | `keytar-secrets/SKILL.md` | 6 | `keytar`, secret lifecycle |
-| Web Packaging | `web-packaging/SKILL.md` | 7 | `npm`, bundled runtime, PWA packaging |
-| Path Safety | `path-safety/SKILL.md` | 1–7 | Cross-platform path rules, audit |
+| Skill | Path | Domain |
+|---|---|---|
+| Express + React Scaffold | `express-react-scaffold/SKILL.md` | project setup, Vite, server runtime |
+| REST API + WebSocket | `rest-websocket-api/SKILL.md` | envelope pattern, routes, push events |
+| SQLite Migrations | `sqlite-migrations/SKILL.md` | database schema and migration rules |
+| Playwright Binary | `playwright-binary/SKILL.md` | local binary resolution and execution |
+| Playwright Config Reader | `playwright-config-reader/SKILL.md` | project config extraction |
+| chokidar Watcher | `chokidar-watcher/SKILL.md` | filesystem watching and invalidation |
+| React Tree Component | `react-tree-component/SKILL.md` | explorer tree and interactions |
+| Child Process Spawn | `child-process-spawn/SKILL.md` | Windows process handling and cancellation |
+| Playwright JSON Reporter | `playwright-json-reporter/SKILL.md` | result parsing and mapping |
+| Artifact Policy Resolution | `artifact-policy-resolution/SKILL.md` | artefact policy cascade and flags |
+| OS Keychain Secrets | `keytar-secrets/SKILL.md` | secret lifecycle |
+| Web Packaging | `web-packaging/SKILL.md` | bundled runtime and packaging |
+| Path Safety | `path-safety/SKILL.md` | cross-platform filesystem safety |
+| Create Building Blocks | `create-building-blocks/SKILL.md` | adding new visual block kinds, templates, and plugin-backed block features |
 
-## Generic Skills (from `.agents/skills/`)
+## Notes
 
-Also used across phases:
-- `.agents/skills/code-quality/SKILL.md` — shared code quality checklist
-- `.agents/skills/security-review/SKILL.md` — shared security checklist
-- `.agents/skills/documentation/SKILL.md` — documentation conventions
-- `.agents/skills/api-design/SKILL.md` — API/interface design principles
+- App-specific skills live in `.app-info/skills/`.
+- Use the new building-block skill when adding new visual blocks to core or to a plugin.

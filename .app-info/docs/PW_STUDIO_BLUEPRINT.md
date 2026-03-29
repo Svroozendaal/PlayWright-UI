@@ -2,35 +2,36 @@
 
 ## 1. Product Goal
 
-PW Studio v1 is a local web application that wraps Playwright Test with a GUI. A local Node.js server provides the API, WebSocket events, database access, filesystem operations, and process orchestration. The browser UI is the only client. PW Studio is an orchestration layer around Playwright, not a replacement for it.
+PW Studio is a local web application for Playwright Test. A local Node.js server exposes HTTP and WebSocket interfaces, manages the database and filesystem, runs Playwright, and hosts a browser UI on the same machine.
+
+The application is an orchestration layer around Playwright, not a replacement for it.
 
 ## 2. Product Boundaries
 
-- Runs locally on the developer's machine
-- Exposes HTTP and WebSocket interfaces on `127.0.0.1`
-- Does not provide a cloud, multi-user, or remote-access model in v1
-- Preserves file editing, test execution, environment management, recorder flows, and artifact handling
+- Local-only runtime on the developer's machine
+- HTTP and WebSocket listeners bind to `127.0.0.1`
+- No cloud-hosted, multi-user, or remote execution model in v1
+- `.spec.ts` files remain the only executable and persisted test format
+- Visual block editing is an authoring layer only
 
 ## 3. Technology Stack
 
 | Layer | Technology |
 |---|---|
 | Local server | Express + TypeScript |
-| UI | React + TypeScript |
+| Browser UI | React + TypeScript |
 | Realtime push | WebSocket (`ws`) |
 | Database | SQLite (`better-sqlite3`) |
-| File watching | chokidar |
 | Secrets | `keytar` |
-| Automation | Local Playwright binary |
+| File watching | `chokidar` |
+| Automation | local Playwright binary |
 | Packaging | `npm` + bundled Node runtime |
 
 ## 4. Transport Architecture
 
 ### 4.1 Request/Response
 
-All request/response communication goes through REST endpoints under `/api`.
-
-Transport wrapper:
+All route responses use the envelope pattern:
 
 ```ts
 export type ApiEnvelope<T> = {
@@ -38,22 +39,13 @@ export type ApiEnvelope<T> = {
   payload?: T
   error?: { code: string; message: string }
 }
-
-export type IpcEnvelope<T> = ApiEnvelope<T>
 ```
 
-Rules:
-
-- Every route returns an envelope
-- Route handlers validate params, query, and body at the boundary
-- Known failures map to `ERROR_CODES`
-- Unknown failures return `UNKNOWN` without leaking internals
+`IpcEnvelope<T>` remains a temporary alias in shared types for compatibility.
 
 ### 4.2 Push Events
 
-Push communication uses a single WebSocket endpoint at `/ws`.
-
-Event payload shape:
+Push events are sent over `/ws` with:
 
 ```ts
 type SocketMessage = {
@@ -62,33 +54,169 @@ type SocketMessage = {
 }
 ```
 
-Rules:
-
-- One shared socket connection per browser session
-- Existing event names are preserved where practical
-- Services broadcast events through a `broadcast(channel, data)` function
-- The same events are also emitted internally through a server `EventEmitter` for plugins
+The same events are also emitted internally through a server `EventEmitter` so plugins can subscribe without talking through the browser transport.
 
 ### 4.3 Shared Contracts
 
-Shared transport and domain types stay in `src/shared/types/ipc.ts` during the migration. The file continues to hold:
+`src/shared/types/ipc.ts` contains:
 
-- `ApiEnvelope<T>` and temporary `IpcEnvelope<T>` alias
+- `ApiEnvelope<T>` and `IpcEnvelope<T>`
 - `API_ROUTES`
 - `WS_EVENTS`
 - `ERROR_CODES`
-- Domain types such as `RegisteredProject`, `HealthSnapshot`, `RunRecord`, and `ExplorerNode`
+- domain types
+- block-editor contracts
+- plugin manifests and project plugin state
 
 ## 5. Security Model
 
-- Bind HTTP and WebSocket listeners to `127.0.0.1`
+- Bind to `127.0.0.1`
 - Allow CORS only for the Vite dev origin in development
-- Use same-origin access in production
-- Never expose plaintext secrets to the browser
-- Keep filesystem and process access server-side only
-- Validate all user-controlled input before using it in filesystem, SQL, or shell boundaries
+- Use same-origin behaviour in production
+- Keep filesystem, process, and keychain access on the server
+- Validate route params, query, and body data at the boundary
 
-## 6. API Surface
+## 6. Runtime Topology
+
+```text
+Browser UI -> API client + WebSocket -> Express server -> services -> SQLite / filesystem / Playwright / keytar
+```
+
+The browser has no direct filesystem or Node access.
+
+## 7. Core Application Areas
+
+### 7.1 Projects
+
+- create projects
+- import existing Playwright projects
+- store registry metadata without moving project folders
+
+### 7.2 Health
+
+- validate Node, npm, Playwright, browsers, and project config
+- expose config summaries such as `testDir`, browser projects, and output directory
+
+### 7.3 Explorer and Editing
+
+- index test files and test cases
+- open and save files
+- expose test-case metadata with stable `TestCaseRef`
+- support both code editing and visual block editing
+
+### 7.4 Runs
+
+- run folders, files, and specific tests
+- support headed mode and run options
+- stream logs in realtime
+- store run history, test results, and artefact paths
+
+### 7.5 Recorder
+
+- run Playwright codegen
+- save output to a normal file
+- refine code through the recorder transform pipeline
+- surface suggestions and extracted values in the UI
+
+### 7.6 Block Authoring
+
+The visual test editor:
+
+- loads one selected `test(...)`
+- maps supported statements into blocks
+- keeps unsupported statements as raw code blocks
+- saves back into the source file
+- reparses code edits back into blocks
+- caches visual documents locally for faster reloads
+
+The file remains the only runnable source of truth.
+
+### 7.7 Block Library
+
+The block library is global and file-backed. It combines:
+
+- core built-in block templates
+- plugin-contributed block templates
+- custom templates stored in app data
+
+Projects only control which templates are enabled for that project.
+
+### 7.8 Plugins
+
+PW Studio is now plugin-first.
+
+Core provides generic extension points for:
+
+- recorder transforms
+- block definitions
+- block templates
+- project setup hooks
+- routes
+- UI metadata
+
+Plugins are discovered from:
+
+- `~/.pw-studio/plugins`
+- optional configured extra directories
+- `pw-studio/plugins` for shipped local plugins
+
+Project enablement is stored in:
+
+```text
+.pw-studio/plugins/<plugin-id>.json
+```
+
+### 7.9 Integrations
+
+The UI exposes:
+
+- global plugin manager
+- project integrations page
+- global block library page
+
+These pages let users inspect installed plugins, enable them per project, and manage reusable block templates.
+
+## 8. Plugin Contract
+
+### 8.1 Manifest
+
+Each plugin has a manifest with:
+
+- `id`
+- `name`
+- `version`
+- `description`
+- `capabilities`
+- optional backend/frontend metadata
+
+### 8.2 Runtime Contributions
+
+Plugins may register:
+
+- recorder transforms
+- block definitions and templates
+- project setup hooks
+- routes
+- event listeners
+
+### 8.3 Project Setup
+
+When enabled for a project, plugins may scaffold project-local files. Core only orchestrates the hook; the plugin defines what it needs.
+
+## 9. Shipped Plugin Example
+
+The repo currently ships `mendix-portable-workflow` as an optional plugin.
+
+It adds:
+
+- a recorder normaliser for brittle Mendix cell clicks
+- helper scaffolding in `tests/support/mendix-pointers.ts`
+- a project-local Mendix map file
+- a Mendix-specific visual block for `mx.clickRowCell(...)`
+
+This plugin exists to validate the generic runtime. It is not a special case in core.
+
+## 10. API Surface
 
 Core route groups:
 
@@ -106,219 +234,140 @@ Core route groups:
 - `/api/files`
 - `/api/projects/:id/flaky`
 - `/api/projects/:id/dashboard`
+- `/api/block-library`
+- `/api/plugins`
+- `/api/projects/:id/plugins`
 - `/api/openapi.json`
 - `/api/plugins/:pluginName/*`
 
-OpenAPI is generated from the same route registry used to register handlers and validation schemas.
+## 11. Backend Architecture
 
-## 7. Frontend Architecture
+The server is organised as:
 
-The renderer is a React SPA served by Vite in development and by the local server in production.
+1. routes
+2. services
+3. database and migrations
+4. plugin runtime and loader
+5. websocket and static hosting infrastructure
 
-Rules:
+### 11.1 Service Container
 
-- Use `BrowserRouter`
-- Call the backend through `src/renderer/src/api/client.ts`
-- Subscribe to push events through `src/renderer/src/api/useSocket.ts`
-- Replace native dialogs with in-app browser components
-- Keep UI state local unless state sharing is clearly necessary
-
-Primary screens:
-
-- Projects
-- Dashboard
-- Explorer
-- Runs
-- Run Detail
-- Run Comparison
-- Environments
-- Recorder
-- Settings
-- Flaky Tests
-
-## 8. Backend Architecture
-
-The server is split into four layers:
-
-1. **Routes** — HTTP endpoint registration and request validation
-2. **Services** — business logic and orchestration
-3. **Database** — SQLite access and migrations
-4. **Infrastructure** — WebSocket server, plugin loader, OpenAPI generation, static asset serving
-
-### 8.1 Service Container
-
-`ServiceContainer` wires together long-lived services and shared runtime dependencies:
+`ServiceContainer` wires together:
 
 - `db`
 - `broadcast`
 - `events`
-- domain services such as project registry, health, index, run, artifact, secrets, environment, recorder, dashboard
+- domain services
+- `pluginRuntime`
+- block library service
+- test editor service
 
-### 8.2 Event Sources
+### 11.2 Plugin Runtime
 
-Important server-originated events:
+The plugin runtime owns:
 
-- `runs:statusChanged`
-- `runs:logEvent`
-- `explorer:refresh`
-- `environments:changed`
-- `health:refresh`
-- `recorder:status`
+- block definition registry
+- block template registry
+- recorder transform pipeline
+- project setup handlers
+- loaded plugin metadata
 
-## 9. File Dialog Replacements
+Core block definitions and recorder refinement are registered through the same runtime path as external plugins.
 
-Native desktop dialogs are replaced with browser-based components backed by server APIs.
+## 12. Database and Files
 
-### 9.1 Folder Picker
+SQLite remains the system of record for projects, runs, test results, settings, and artefact policy.
 
-- Calls `POST /api/directories/browse`
-- Browses from home directory or Documents by default
-- Supports breadcrumb navigation and directory selection
+File-backed config is used for:
 
-### 9.2 Save File Flow
+- visual editor cache
+- custom block templates
+- project block-library availability
+- per-project plugin enablement
+- plugin-specific project files
 
-- Uses directory browsing plus explicit filename input
-- Recorder flow stores directory and filename separately in UI, then sends combined `outputPath` to the server
-- No native save dialog in v1
+## 13. Filesystem and Process Rules
 
-## 10. Database
-
-SQLite remains the system of record.
-
-Database location:
-
-- Windows: `%APPDATA%/pw-studio/pw-studio.db`
-- macOS: `~/Library/Application Support/pw-studio/pw-studio.db`
-- Linux: `~/.config/pw-studio/pw-studio.db`
-
-Rules:
-
-- Open one shared connection at server start
-- Create `schema_version` before running migrations
-- Keep migrations append-only
-- Use WAL mode and prepared statements
-
-## 11. Filesystem and Process Rules
-
-- Use `path.join()` or `path.resolve()` for path construction
-- Never hardcode `tests/`; use `configSummary.testDir`
-- Spawn the local Playwright binary only
-- Use `taskkill /T /F` on Windows when cancelling Playwright process trees
-- Open artifacts via OS shell commands:
-  - Windows: `start`
-  - macOS: `open`
-  - Linux: `xdg-open`
-
-## 12. Plugins
-
-Plugins are Node modules discovered from `~/.pw-studio/plugins` plus optional configured extra directories.
-
-Plugin contract:
-
-```ts
-interface PwStudioPlugin {
-  name: string
-  version: string
-  activate(ctx: PluginContext): void | Promise<void>
-  deactivate?(): void | Promise<void>
-  routes?(router: Router): void
-  onEvent?(channel: string, data: unknown): void
-}
-```
-
-Rules:
-
-- Routes mount under `/api/plugins/:pluginName`
-- Plugins receive typed service access through `PluginContext`
-- No hot reload in v1; restart required
-
-## 13. OpenAPI and AI/MCP Access
-
-- `/api/openapi.json` exposes the local API contract
-- The OpenAPI document is generated from the registered route schemas
-- The REST API is the foundation for AI and MCP integrations
-- Keep response shapes stable and deterministic
+- Use `path.join()` and `path.resolve()`
+- Resolve `testDir` from project config rather than hardcoding test locations
+- spawn the local Playwright binary only
+- cancel process trees correctly on Windows
+- open artefacts through OS shell commands
 
 ## 14. Project Structure
 
 ```text
 pw-studio/
-├── src/
-│   ├── server/
-│   │   ├── db/
-│   │   ├── middleware/
-│   │   ├── plugins/
-│   │   ├── routes/
-│   │   ├── services/
-│   │   ├── utils/
-│   │   ├── index.ts
-│   │   └── ws.ts
-│   ├── renderer/
-│   │   ├── public/
-│   │   └── src/
-│   │       ├── api/
-│   │       ├── components/
-│   │       ├── pages/
-│   │       ├── App.tsx
-│   │       └── main.tsx
-│   └── shared/
-│       └── types/
-├── sample-project/
-├── vite.config.ts
-├── tsconfig.server.json
-├── tsconfig.web.json
-└── package.json
+|-- plugins/                  # shipped local plugins
+|-- src/
+|   |-- server/
+|   |   |-- db/
+|   |   |-- middleware/
+|   |   |-- plugins/
+|   |   |-- routes/
+|   |   |-- services/
+|   |   |-- utils/
+|   |   |-- index.ts
+|   |   `-- ws.ts
+|   |-- renderer/
+|   |   |-- public/
+|   |   `-- src/
+|   |       |-- api/
+|   |       |-- components/
+|   |       `-- pages/
+|   `-- shared/
+|       `-- types/
+|-- sample-project/
+|-- vite.config.ts
+|-- tsconfig.server.json
+|-- tsconfig.web.json
+`-- package.json
 ```
 
 ## 15. Runtime Start-Up
 
-Start-up order:
-
-1. Resolve runtime paths and open SQLite
-2. Create shared `EventEmitter`
-3. Create WebSocket server and `broadcast()` function
-4. Create services
-5. Load plugins
-6. Register API routes
-7. Register OpenAPI endpoint
-8. Serve SPA assets or Vite-proxied frontend
-9. Print local URL and wait for browser client connections
-
-Shutdown order:
-
-1. Stop watchers
-2. Deactivate plugins
-3. Close WebSocket server
-4. Close HTTP server
-5. Checkpoint and close SQLite
+1. resolve runtime paths and open SQLite
+2. create shared event emitter
+3. create WebSocket server and broadcaster
+4. create services
+5. register core plugin contributions
+6. load external and shipped plugins
+7. register API routes and OpenAPI
+8. serve SPA assets or rely on the Vite frontend in development
 
 ## 16. Build Phases
 
-### Phase 1 — Foundation
-Express server, React SPA, route constants, `ApiEnvelope`, project registry, settings bootstrap, folder browser.
+### Phase 1 - Foundation
 
-### Phase 2 — Project Lifecycle + Health
-Health routes, config extraction, project import/open flows, health panel.
+Express server, React SPA, route constants, envelope transport, settings bootstrap, project registry.
 
-### Phase 3 — Explorer
-Watcher service, project indexing, tree rendering, file operations.
+### Phase 2 - Project Lifecycle + Health
 
-### Phase 4 — Run Engine
-Run orchestration, log streaming, run history, run detail.
+Project creation/import, template generation, config reading, health checks.
 
-### Phase 5 — Artifacts
-Artifact policy storage, rerun failed, report and trace open flows.
+### Phase 3 - Explorer
 
-### Phase 6 — Environments + Secrets + Recorder
-Environments, `keytar` secrets, recorder status push, browser save-path flow.
+Indexing, file tree, test case detection, file reading and writing.
 
-### Phase 7 — Packaging + Polish
-`npm` package, bundled runtime, PWA manifest, OpenAPI, plugins, documentation.
+### Phase 4 - Run Engine
+
+Run orchestration, command building, log streaming, result persistence.
+
+### Phase 5 - Artefacts
+
+Artefact policies, rerun failed, report and trace access.
+
+### Phase 6 - Environments + Secrets + Recorder
+
+Environments, keychain-backed secrets, recorder and save flow.
+
+### Phase 7 - Packaging + Platform
+
+Bundled runtime, OpenAPI, block library, visual editor, plugin runtime, plugin management, documentation.
 
 ## 17. Technical Debt
 
-- Route validation and OpenAPI are introduced during the migration and should be kept in lockstep
-- Plugin isolation is lightweight in v1; plugins run in-process
-- Recorder file-save UX is browser-based rather than native
-- Native dependencies still require platform-aware distribution and verification
-- Full automated end-to-end coverage for browser-plus-server flows still needs expansion
+- Frontend plugin code loading is not yet dynamic; plugins currently expose backend/runtime capabilities and UI metadata
+- Plugins run in-process with lightweight isolation
+- Visual editor block coverage is still intentionally partial, with raw code fallback for unsupported statements
+- End-to-end automated browser coverage should be expanded for plugin flows and recorder-to-block pipelines

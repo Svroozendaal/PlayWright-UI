@@ -30,7 +30,12 @@ async function main(): Promise<void> {
   const events = new EventEmitter()
   const db = openDatabase()
   const services = createServices(db, broadcast, events)
-  const pluginManager = await loadPlugins({ services, events, logger: console })
+  const pluginManager = await loadPlugins({
+    services,
+    events,
+    runtime: services.pluginRuntime,
+    logger: console,
+  })
   let shuttingDown = false
 
   app.use(express.json({ limit: '4mb' }))

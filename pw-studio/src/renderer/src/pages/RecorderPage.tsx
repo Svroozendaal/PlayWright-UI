@@ -14,9 +14,18 @@ import type {
 import { api } from '../api/client'
 import { useSocketEvent } from '../api/useSocket'
 import { ErrorBanner } from '../components/ErrorBanner'
-import { FolderPicker } from '../components/FolderPicker'
 import { useProject } from '../components/ProjectLayout'
 
+/**
+ * Join a directory and file name using the path separator implied by the chosen directory.
+ *
+ * Params:
+ * directory - Selected output directory.
+ * fileName - Recorder output file name.
+ *
+ * Returns:
+ * Combined output path string.
+ */
 function joinPath(directory: string, fileName: string): string {
   if (!directory) {
     return fileName
@@ -37,6 +46,12 @@ function joinPath(directory: string, fileName: string): string {
   return `${directory}/${fileName}`
 }
 
+/**
+ * Render the recorder workflow and generated-test review surface.
+ *
+ * Returns:
+ * Recorder page element.
+ */
 export function RecorderPage(): JSX.Element {
   const { id: projectId } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -48,7 +63,6 @@ export function RecorderPage(): JSX.Element {
   const [browser, setBrowser] = useState('chromium')
   const [error, setError] = useState<{ code: string; message: string } | null>(null)
   const [savedResult, setSavedResult] = useState<RecorderSaveResult | null>(null)
-  const [showFolderPicker, setShowFolderPicker] = useState(false)
   const outputPath = joinPath(outputDirectory.trim(), fileName.trim())
 
   useEffect(() => {
@@ -120,6 +134,15 @@ export function RecorderPage(): JSX.Element {
     }
   })
 
+  /**
+   * Re-check the saved recorder output path to load the transformation summary.
+   *
+   * Params:
+   * pathToCheck - Recorder output path to inspect.
+   *
+   * Returns:
+   * Promise that resolves when the lookup finishes.
+   */
   const checkSavedFile = async (pathToCheck: string): Promise<void> => {
     if (!pathToCheck) return
     const result = await api.invoke<RecorderSaveResult | null>(IPC.RECORDER_SAVE, { outputPath: pathToCheck })
@@ -127,6 +150,36 @@ export function RecorderPage(): JSX.Element {
     if (envelope.payload) setSavedResult(envelope.payload)
   }
 
+  /**
+   * Open the native operating system folder chooser for the recorder output directory.
+   *
+   * Returns:
+   * Promise that resolves when the browse flow completes.
+   */
+  const handleBrowseForOutputDirectory = async (): Promise<void> => {
+    setError(null)
+
+    const result = await api.openDirectoryDialog({
+      startPath: outputDirectory || project?.rootPath,
+      title: 'Choose Recorder Output Folder',
+    })
+
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+
+    if (result.payload) {
+      setOutputDirectory(result.payload)
+    }
+  }
+
+  /**
+   * Start Playwright code generation with the current recorder form values.
+   *
+   * Returns:
+   * Promise that resolves when the start request has completed.
+   */
   const handleStart = async (): Promise<void> => {
     setError(null)
     setSavedResult(null)
@@ -144,6 +197,12 @@ export function RecorderPage(): JSX.Element {
     if (envelope.error) setError(envelope.error)
   }
 
+  /**
+   * Stop the currently running recorder session.
+   *
+   * Returns:
+   * Promise that resolves when the stop request has been sent.
+   */
   const handleStop = async (): Promise<void> => {
     await api.invoke(IPC.RECORDER_STOP)
   }
@@ -272,7 +331,11 @@ export function RecorderPage(): JSX.Element {
               placeholder="Select a folder for the generated test..."
               disabled={status === 'running'}
             />
-            <button className="btn btn-secondary" onClick={() => setShowFolderPicker(true)} disabled={status === 'running'}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => void handleBrowseForOutputDirectory()}
+              disabled={status === 'running'}
+            >
               Browse
             </button>
           </div>
@@ -318,22 +381,19 @@ export function RecorderPage(): JSX.Element {
           )}
         </div>
       </div>
-
-      {showFolderPicker && (
-        <FolderPicker
-          title="Choose Recorder Output Folder"
-          startPath={outputDirectory || project?.rootPath}
-          onClose={() => setShowFolderPicker(false)}
-          onSelect={(selectedPath) => {
-            setOutputDirectory(selectedPath)
-            setShowFolderPicker(false)
-          }}
-        />
-      )}
     </div>
   )
 }
 
+/**
+ * Render one post-processing suggestion from the recorder output analysis.
+ *
+ * Params:
+ * suggestion - Suggested follow-up change for the generated test.
+ *
+ * Returns:
+ * Suggestion card element.
+ */
 function RecorderSuggestionCard({
   suggestion,
 }: {
@@ -347,6 +407,15 @@ function RecorderSuggestionCard({
   )
 }
 
+/**
+ * Render one extracted constant promoted from the recorder output.
+ *
+ * Params:
+ * extraction - Extracted selector, value, or URL constant metadata.
+ *
+ * Returns:
+ * Extraction summary row element.
+ */
 function RecorderExtractionRow({
   extraction,
 }: {

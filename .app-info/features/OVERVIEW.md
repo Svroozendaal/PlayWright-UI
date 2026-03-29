@@ -1,14 +1,13 @@
-# FEATURES — PW Studio
+# FEATURES - PW Studio
 
 ## Overview
 
-Features are registered here as they are built. Each feature maps to a build phase from the product plan.
+The registry tracks what the application currently ships, not just planned work.
 
 ## Feature Status Legend
 
-- **planned** — defined in blueprint, not yet started
-- **in-progress** — actively being built
-- **complete** — built and validated
-- **deferred** — moved to v2+
+- complete - implemented and validated
+- in-progress - implemented partially or still being stabilised
+- deferred - intentionally left for later
 
-See `FEATURES.md` for the full registry.
+See `FEATURES.md` for the current feature set.

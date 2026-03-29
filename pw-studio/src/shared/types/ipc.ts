@@ -34,6 +34,9 @@ export const API_ROUTES = {
   TEST_EDITOR_LIBRARY: '/test-editor/library',
   BLOCK_LIBRARY_TEMPLATES: '/block-library/templates',
   BLOCK_LIBRARY_PROJECT: '/projects/:id/block-library',
+  PLUGINS_LIST: '/plugins',
+  PROJECT_PLUGINS_LIST: '/projects/:id/plugins',
+  PROJECT_PLUGIN_UPDATE: '/projects/:id/plugins/:pluginId',
 
   RUNS_START: '/projects/:id/runs',
   RUNS_GET_ACTIVE: '/projects/:id/runs/active',
@@ -120,6 +123,9 @@ export const IPC = {
   BLOCK_LIBRARY_TEMPLATES_SAVE: 'blockLibrary:templates:save',
   BLOCK_LIBRARY_PROJECT: 'blockLibrary:project',
   BLOCK_LIBRARY_PROJECT_SAVE: 'blockLibrary:project:save',
+  PLUGINS_LIST: 'plugins:list',
+  PROJECT_PLUGINS_LIST: 'projectPlugins:list',
+  PROJECT_PLUGIN_UPDATE: 'projectPlugins:update',
 
   RUNS_START: 'runs:start',
   RUNS_GET_ACTIVE: 'runs:getActive',
@@ -425,6 +431,16 @@ export type TestCaseRef = {
   testTitle: string
 }
 
+export type TestReferenceSpec = {
+  filePath: string
+  ordinal: number
+  testTitle: string
+}
+
+export type AvailableTestCase = TestReferenceSpec & {
+  label: string
+}
+
 export type TestEditorMode = 'existing' | 'create'
 
 export type SelectorStrategy = 'role' | 'text' | 'label' | 'test_id' | 'css'
@@ -440,6 +456,7 @@ export type BlockDisplayValueSource =
   | 'value'
   | 'selector.value'
   | 'selector.name'
+  | 'test.title'
   | 'code'
 
 export type BlockDisplayConfig = {
@@ -450,66 +467,62 @@ export type BlockDisplayConfig = {
   separator?: ': ' | ' '
 }
 
-export type RawCodeBlock = {
-  id: string
-  title: string
-  templateId?: string
-  kind: 'raw_code'
-  code: string
-}
-
-export type GotoUrlBlock = {
-  id: string
-  title: string
-  templateId?: string
-  kind: 'goto_url'
-  url: string
-}
-
-export type ClickElementBlock = {
-  id: string
-  title: string
-  templateId?: string
-  kind: 'click_element'
-  selector: SelectorSpec
-}
-
-export type FillFieldBlock = {
-  id: string
-  title: string
-  templateId?: string
-  kind: 'fill_field'
-  selector: SelectorSpec
+export type BlockFieldOption = {
+  label: string
   value: string
 }
 
-export type ExpectUrlBlock = {
+export type BlockFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'selector' | 'test_case'
+
+export type BlockFieldSchema = {
+  key: string
+  label: string
+  type: BlockFieldType
+  required?: boolean
+  placeholder?: string
+  rows?: number
+  options?: BlockFieldOption[]
+}
+
+export type BlockFieldValue =
+  | string
+  | boolean
+  | number
+  | null
+  | SelectorSpec
+  | TestReferenceSpec
+
+export type TestBlock = {
   id: string
   title: string
   templateId?: string
-  kind: 'expect_url'
-  url: string
+  kind: string
+  values: Record<string, BlockFieldValue>
 }
 
-export type TestBlock =
-  | RawCodeBlock
-  | GotoUrlBlock
-  | ClickElementBlock
-  | FillFieldBlock
-  | ExpectUrlBlock
+export type TestBlockTemplate = {
+  kind: string
+  values: Record<string, BlockFieldValue>
+}
 
-export type TestBlockTemplate =
-  | Omit<RawCodeBlock, 'id' | 'title'>
-  | Omit<GotoUrlBlock, 'id' | 'title'>
-  | Omit<ClickElementBlock, 'id' | 'title'>
-  | Omit<FillFieldBlock, 'id' | 'title'>
-  | Omit<ExpectUrlBlock, 'id' | 'title'>
+export type BlockDefinition = {
+  kind: string
+  name: string
+  description: string
+  category: string
+  defaultTitle: string
+  builtIn: boolean
+  pluginId?: string
+  fields: BlockFieldSchema[]
+  display?: BlockDisplayConfig
+}
 
 export type BlockTemplate = {
   id: string
   name: string
   description: string
   category: string
+  pluginId?: string
   block: TestBlockTemplate
   display?: BlockDisplayConfig
 }
@@ -519,15 +532,71 @@ export type ManagedBlockTemplate = BlockTemplate & {
 }
 
 export type TestEditorLibraryPayload = {
+  definitions: BlockDefinition[]
   templates: ManagedBlockTemplate[]
   availableTemplateIds: string[]
+  availableTestCases: AvailableTestCase[]
 }
 
 export type BlockLibraryProjectState = {
+  definitions: BlockDefinition[]
   templates: ManagedBlockTemplate[]
   includedTemplateIds: string[]
   globalTemplatesPath: string
   projectConfigPath: string | null
+}
+
+export type PluginCapability =
+  | 'routes'
+  | 'blocks'
+  | 'recorderTransforms'
+  | 'projectSetup'
+  | 'healthChecks'
+  | 'ui'
+
+export type PluginUiPage = {
+  id: string
+  title: string
+  path: string
+}
+
+export type PluginUiPanel = {
+  id: string
+  title: string
+  target: 'settings' | 'recorder' | 'explorer' | 'project-integrations'
+}
+
+export type PluginUiContributions = {
+  pages: PluginUiPage[]
+  panels: PluginUiPanel[]
+}
+
+export type PluginManifestSummary = {
+  id: string
+  name: string
+  version: string
+  description?: string
+  capabilities: PluginCapability[]
+  backendEntry?: string | null
+  frontendEntry?: string | null
+  routeBase?: string | null
+  ui?: PluginUiContributions
+}
+
+export type LoadedPluginSummary = PluginManifestSummary & {
+  status: 'loaded' | 'error'
+  error?: string
+}
+
+export type ProjectPluginState = {
+  pluginId: string
+  enabled: boolean
+  configPath: string
+  manifest: LoadedPluginSummary
+}
+
+export type ProjectPluginList = {
+  plugins: ProjectPluginState[]
 }
 
 export type TestEditorTemplate = {

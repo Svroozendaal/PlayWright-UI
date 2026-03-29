@@ -1,13 +1,14 @@
-# DOCS — PW Studio
+# DOCS - PW Studio
 
 ## Available Documentation
 
 | Document | Description |
 |---|---|
-| `PW_STUDIO_BLUEPRINT.md` | Complete architecture blueprint v1 — IPC, DB schema, services, build phases, project structure |
+| `PW_STUDIO_BLUEPRINT.md` | Full architecture blueprint for the local runtime, plugin model, block editor, recorder, and packaging |
 
 ## Conventions
 
-- Documentation produced during development lives here.
-- Architecture decisions reference the blueprint as the source of truth.
-- Module-level docs are added as features are built.
+- Keep these docs aligned with the real codebase.
+- Use UK English.
+- Treat the blueprint as the main source of truth for architecture and extension points.
+- Update this folder when new user-facing systems land, especially plugins, block authoring, recorder changes, and packaging changes.

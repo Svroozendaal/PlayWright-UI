@@ -10,6 +10,8 @@ import { EnvironmentsPage } from './pages/EnvironmentsPage'
 import { RecorderPage } from './pages/RecorderPage'
 import { FlakyTestsPage } from './pages/FlakyTestsPage'
 import { BlockLibraryPage } from './pages/BlockLibraryPage'
+import { PluginManagerPage } from './pages/PluginManagerPage'
+import { ProjectIntegrationsPage } from './pages/ProjectIntegrationsPage'
 import { ProjectLayout } from './components/ProjectLayout'
 import './App.css'
 
@@ -27,9 +29,11 @@ export function App(): JSX.Element {
           <Route path="environments" element={<EnvironmentsPage />} />
           <Route path="recorder" element={<RecorderPage />} />
           <Route path="flaky" element={<FlakyTestsPage />} />
+          <Route path="integrations" element={<ProjectIntegrationsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/plugins" element={<PluginManagerPage />} />
         <Route path="/settings/block-library" element={<BlockLibraryPage />} />
       </Routes>
     </BrowserRouter>
