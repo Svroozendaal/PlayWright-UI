@@ -134,5 +134,9 @@ export function buildEnvVars(request: RunRequest): Record<string, string> {
     Object.assign(env, request.extraEnv)
   }
 
+  if (request.flowInputOverrides && Object.keys(request.flowInputOverrides).length > 0) {
+    env['PW_STUDIO_FLOW_INPUTS'] = JSON.stringify(request.flowInputOverrides)
+  }
+
   return env
 }

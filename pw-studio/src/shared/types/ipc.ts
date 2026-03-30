@@ -262,6 +262,7 @@ export type RunRequest = {
   baseURLOverride?: string
   extraEnv?: Record<string, string>
   streamLogs?: boolean
+  flowInputOverrides?: Record<string, string>
 }
 
 export type RunRecord = {
@@ -437,13 +438,27 @@ export type TestReferenceSpec = {
   testTitle: string
 }
 
+export type FlowInputDefinition = {
+  id: string
+  name: string
+  defaultValue: string
+  exposeAtRunStart: boolean
+}
+
+export type FlowInputMapping = {
+  targetName: string
+  source: 'flow_input' | 'literal'
+  value: string
+}
+
 export type AvailableTestCase = TestReferenceSpec & {
   label: string
+  flowInputs: FlowInputDefinition[]
 }
 
 export type TestEditorMode = 'existing' | 'create'
 
-export type SelectorStrategy = 'role' | 'text' | 'label' | 'test_id' | 'css'
+export type SelectorStrategy = 'role' | 'text' | 'label' | 'test_id' | 'css' | 'placeholder'
 
 export type SelectorSpec = {
   strategy: SelectorStrategy
@@ -454,6 +469,7 @@ export type SelectorSpec = {
 export type BlockDisplayValueSource =
   | 'url'
   | 'value'
+  | 'definitions'
   | 'selector.value'
   | 'selector.name'
   | 'test.title'
@@ -472,7 +488,7 @@ export type BlockFieldOption = {
   value: string
 }
 
-export type BlockFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'selector' | 'test_case'
+export type BlockFieldType = 'text' | 'textarea' | 'select' | 'checkbox' | 'selector' | 'test_case' | 'flow_mapping'
 
 export type BlockFieldSchema = {
   key: string
@@ -491,6 +507,7 @@ export type BlockFieldValue =
   | null
   | SelectorSpec
   | TestReferenceSpec
+  | FlowInputMapping[]
 
 export type TestBlock = {
   id: string
@@ -611,6 +628,7 @@ export type TestEditorDocument = {
   mode: TestEditorMode
   filePath: string
   testTitle: string
+  flowInputs: FlowInputDefinition[]
   blocks: TestBlock[]
   code: string
   warnings: string[]

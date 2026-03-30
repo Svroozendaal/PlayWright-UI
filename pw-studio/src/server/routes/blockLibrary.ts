@@ -15,6 +15,12 @@ const testReferenceSchema = z.object({
   testTitle: z.string(),
 })
 
+const flowInputMappingSchema = z.object({
+  targetName: z.string(),
+  source: z.enum(['flow_input', 'literal']),
+  value: z.string(),
+})
+
 const blockFieldValueSchema = z.union([
   z.string(),
   z.boolean(),
@@ -22,11 +28,12 @@ const blockFieldValueSchema = z.union([
   z.null(),
   selectorSchema,
   testReferenceSchema,
+  z.array(flowInputMappingSchema),
 ])
 
 const displayConfigSchema = z.object({
   label: z.string().min(1),
-  detailSource: z.enum(['url', 'value', 'selector.value', 'selector.name', 'test.title', 'code']),
+  detailSource: z.enum(['url', 'value', 'definitions', 'selector.value', 'selector.name', 'test.title', 'code']),
   quoteDetail: z.boolean().optional(),
   hideTitle: z.boolean().optional(),
   separator: z.enum([': ', ' ']).optional(),

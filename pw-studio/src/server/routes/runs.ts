@@ -24,6 +24,7 @@ const runRequestSchema = z.object({
   baseURLOverride: z.string().optional(),
   extraEnv: z.record(z.string(), z.string()).optional(),
   streamLogs: z.boolean().optional(),
+  flowInputOverrides: z.record(z.string(), z.string()).optional(),
 })
 
 export const runRoutes: RouteDefinition[] = [

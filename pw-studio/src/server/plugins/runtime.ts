@@ -6,6 +6,7 @@ import type {
   BlockTemplate,
   CodegenExtraction,
   CodegenSuggestion,
+  FlowInputDefinition,
   LoadedPluginSummary,
   PluginUiContributions,
   ProjectPluginList,
@@ -41,9 +42,15 @@ export type ServerBlockContext = {
   rootPath?: string
   documentFilePath?: string
   documentTestCaseRef?: TestCaseRef
+  flowInputAccessor?: string
+  flowInputs?: FlowInputDefinition[]
 }
 
 export type ServerBlockDefinition = BlockDefinition & {
+  parseLeadingStatements?: (
+    statements: readonly ts.Statement[],
+    sourceFile: ts.SourceFile
+  ) => { block: TestBlock; consumedCount: number } | null
   parseStatement?: (statement: ts.Statement, title: string | null) => TestBlock | null
   render: (block: TestBlock, context: ServerBlockContext) => string
   validate?: (block: TestBlock, context: ServerBlockContext) => string[]

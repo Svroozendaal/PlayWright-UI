@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { ERROR_CODES } from '../../shared/types/ipc'
 import type {
   BlockFieldValue,
+  FlowInputDefinition,
   TestBlock,
   TestCaseRef,
   TestEditorDocument,
@@ -50,6 +51,12 @@ const testReferenceSchema = z.object({
   testTitle: z.string(),
 })
 
+const flowInputMappingSchema = z.object({
+  targetName: z.string(),
+  source: z.enum(['flow_input', 'literal']),
+  value: z.string(),
+})
+
 const blockFieldValueSchema: z.ZodType<BlockFieldValue> = z.union([
   z.string(),
   z.boolean(),
@@ -57,6 +64,7 @@ const blockFieldValueSchema: z.ZodType<BlockFieldValue> = z.union([
   z.null(),
   selectorSchema,
   testReferenceSchema,
+  z.array(flowInputMappingSchema),
 ])
 
 const persistedBlockSchema = z.object({
@@ -75,10 +83,18 @@ const persistedTemplateSchema = z.object({
   callbackAsync: z.boolean(),
 })
 
+const flowInputSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  defaultValue: z.string(),
+  exposeAtRunStart: z.boolean(),
+})
+
 const persistedDocumentSchema = z.object({
   mode: z.enum(['existing', 'create']),
   filePath: z.string().min(1),
   testTitle: z.string(),
+  flowInputs: z.array(flowInputSchema),
   blocks: z.array(persistedBlockSchema),
   code: z.string(),
   warnings: z.array(z.string()),
@@ -134,6 +150,7 @@ export class TestEditorService {
       mode: 'create',
       filePath,
       testTitle: 'New visual test',
+      flowInputs: [],
       blocks: [],
       code: '',
       warnings: [],
@@ -172,6 +189,11 @@ export class TestEditorService {
   }
 
   save(rootPath: string, document: TestEditorDocument): TestEditorDocument {
+    const inputErrors = this.validateFlowInputs(document.flowInputs)
+    if (inputErrors.length > 0) {
+      throw new ApiRouteError(ERROR_CODES.INVALID_INPUT, inputErrors.join('\n'), 400)
+    }
+
     const titleErrors = this.validateBlockTitles(document.blocks)
     if (titleErrors.length > 0) {
       throw new ApiRouteError(ERROR_CODES.INVALID_INPUT, titleErrors.join('\n'), 400)
@@ -364,9 +386,23 @@ export class TestEditorService {
     const storedBlocks = new Map(
       stored.blocks.map((block) => [block.title.trim().toLowerCase(), block] as const)
     )
+    const storedInputs = new Map(
+      stored.flowInputs.map((input) => [input.name.trim().toLowerCase(), input] as const)
+    )
 
     return {
       ...parsed,
+      flowInputs: parsed.flowInputs.map((input) => {
+        const cached = storedInputs.get(input.name.trim().toLowerCase())
+        if (!cached) {
+          return input
+        }
+
+        return {
+          ...input,
+          id: cached.id,
+        }
+      }),
       blocks: parsed.blocks.map((block) => {
         const cached = storedBlocks.get(block.title.trim().toLowerCase())
         if (!cached || cached.kind !== block.kind) {
@@ -432,6 +468,34 @@ export class TestEditorService {
 
   private hashCode(value: string): string {
     return createHash('sha1').update(value).digest('hex')
+  }
+
+  private validateFlowInputs(flowInputs: FlowInputDefinition[]): string[] {
+    const errors: string[] = []
+    const seen = new Set<string>()
+
+    for (const input of flowInputs) {
+      const name = input.name.trim()
+      if (name.length === 0) {
+        errors.push('Flow inputs must have a name.')
+        continue
+      }
+
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+        errors.push(`Invalid flow input name: "${input.name}". Use letters, numbers, and underscores only, and start with a letter or underscore.`)
+        continue
+      }
+
+      const normalised = name.toLowerCase()
+      if (seen.has(normalised)) {
+        errors.push(`Flow input names must be unique: "${input.name}".`)
+        continue
+      }
+
+      seen.add(normalised)
+    }
+
+    return errors
   }
 
   private getDefinitions(rootPath?: string) {

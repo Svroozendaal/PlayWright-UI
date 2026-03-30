@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react'
 import { IPC } from '../../../shared/types/ipc'
 import type {
+  FlowInputDefinition,
   IpcEnvelope,
   RunRequest,
   BrowserSelection,
   Environment,
   ProjectConfigSummary,
   RegisteredProject,
+  TestCaseRef,
+  TestEditorDocument,
 } from '../../../shared/types/ipc'
 import { api } from '../api/client'
 import { ErrorBanner } from './ErrorBanner'
@@ -16,6 +19,7 @@ type RunDialogProps = {
   targetPath?: string
   target?: string
   testTitleFilter?: string
+  testCaseRef?: TestCaseRef
   onClose: () => void
   onStarted: (runId: string) => void
 }
@@ -25,6 +29,7 @@ export function RunDialog({
   targetPath,
   target,
   testTitleFilter,
+  testCaseRef,
   onClose,
   onStarted,
 }: RunDialogProps): JSX.Element {
@@ -38,6 +43,9 @@ export function RunDialog({
   const [grepPattern, setGrepPattern] = useState('')
   const [grepInvert, setGrepInvert] = useState(false)
   const [tagFilter, setTagFilter] = useState('')
+  const [exposedFlowInputs, setExposedFlowInputs] = useState<FlowInputDefinition[]>([])
+  const [flowInputValues, setFlowInputValues] = useState<Record<string, string>>({})
+  const [loadingFlowInputs, setLoadingFlowInputs] = useState(false)
   const [error, setError] = useState<{ code: string; message: string } | null>(null)
   const [starting, setStarting] = useState(false)
 
@@ -70,6 +78,44 @@ export function RunDialog({
     void fetchProjectDefaults()
   }, [projectId])
 
+  useEffect(() => {
+    if (!targetPath || !testCaseRef) {
+      setExposedFlowInputs([])
+      setFlowInputValues({})
+      setLoadingFlowInputs(false)
+      return
+    }
+
+    let cancelled = false
+
+    const fetchFlowInputs = async (): Promise<void> => {
+      setLoadingFlowInputs(true)
+      const result = await api.invoke<TestEditorDocument>(IPC.TEST_EDITOR_LOAD, {
+        projectId,
+        filePath: targetPath,
+        mode: 'existing',
+        testCaseRef,
+      })
+      if (cancelled) {
+        return
+      }
+
+      const envelope = result as IpcEnvelope<TestEditorDocument>
+      const nextInputs = (envelope.payload?.flowInputs ?? []).filter((input) => input.exposeAtRunStart)
+      setExposedFlowInputs(nextInputs)
+      setFlowInputValues(
+        Object.fromEntries(nextInputs.map((input) => [input.name, input.defaultValue]))
+      )
+      setLoadingFlowInputs(false)
+    }
+
+    void fetchFlowInputs()
+
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, targetPath, testCaseRef?.ordinal, testCaseRef?.testTitle])
+
   const handleStart = async (): Promise<void> => {
     setError(null)
     setStarting(true)
@@ -92,6 +138,15 @@ export function RunDialog({
       headed,
       baseURLOverride: baseURL || undefined,
       streamLogs: true,
+      flowInputOverrides:
+        exposedFlowInputs.length > 0
+          ? Object.fromEntries(
+              exposedFlowInputs.map((input) => [
+                input.name,
+                flowInputValues[input.name] ?? input.defaultValue,
+              ])
+            )
+          : undefined,
     }
 
     const result = await api.invoke<string>(IPC.RUNS_START, request)
@@ -129,6 +184,36 @@ export function RunDialog({
           <div className="form-group">
             <label>Test Filter</label>
             <input type="text" value={testTitleFilter} readOnly />
+          </div>
+        )}
+
+        {testCaseRef && (
+          <div className="form-group">
+            <label>Flow inputs</label>
+            {loadingFlowInputs ? (
+              <div className="settings-value">Loading flow inputs...</div>
+            ) : exposedFlowInputs.length === 0 ? (
+              <div className="settings-value">This flow uses saved defaults only.</div>
+            ) : (
+              <div className="test-editor-flow-input-list">
+                {exposedFlowInputs.map((input) => (
+                  <label key={input.id}>
+                    {input.name}
+                    <input
+                      type="text"
+                      value={flowInputValues[input.name] ?? ''}
+                      onChange={(e) =>
+                        setFlowInputValues((current) => ({
+                          ...current,
+                          [input.name]: e.target.value,
+                        }))
+                      }
+                      placeholder={input.defaultValue}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

@@ -7,6 +7,7 @@ import type {
   BlockFieldValue,
   BlockLibraryProjectState,
   BlockTemplate,
+  FlowInputMapping,
   ManagedBlockTemplate,
   SelectorSpec,
   TestReferenceSpec,
@@ -28,6 +29,12 @@ const testReferenceSchema = z.object({
   testTitle: z.string(),
 })
 
+const flowInputMappingSchema = z.object({
+  targetName: z.string(),
+  source: z.enum(['flow_input', 'literal']),
+  value: z.string(),
+})
+
 const blockFieldValueSchema: z.ZodType<BlockFieldValue> = z.union([
   z.string(),
   z.boolean(),
@@ -35,11 +42,12 @@ const blockFieldValueSchema: z.ZodType<BlockFieldValue> = z.union([
   z.null(),
   selectorSchema,
   testReferenceSchema,
+  z.array(flowInputMappingSchema),
 ])
 
 const displayConfigSchema = z.object({
   label: z.string().min(1),
-  detailSource: z.enum(['url', 'value', 'selector.value', 'selector.name', 'test.title', 'code']),
+  detailSource: z.enum(['url', 'value', 'definitions', 'selector.value', 'selector.name', 'test.title', 'code']),
   quoteDetail: z.boolean().optional(),
   hideTitle: z.boolean().optional(),
   separator: z.enum([': ', ' ']).optional(),
@@ -299,6 +307,8 @@ function isFieldTypeValid(type: BlockDefinition['fields'][number]['type'], value
       return isSelectorSpec(value)
     case 'test_case':
       return value === null || isTestReferenceSpec(value)
+    case 'flow_mapping':
+      return Array.isArray(value) && value.every((entry) => isFlowInputMapping(entry))
   }
 }
 
@@ -316,4 +326,19 @@ function isTestReferenceSpec(value: BlockFieldValue): value is TestReferenceSpec
   }
 
   return 'filePath' in value && 'ordinal' in value && 'testTitle' in value
+}
+
+function isFlowInputMapping(value: unknown): value is FlowInputMapping {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  return (
+    'targetName' in value &&
+    'source' in value &&
+    'value' in value &&
+    typeof (value as FlowInputMapping).targetName === 'string' &&
+    ((value as FlowInputMapping).source === 'flow_input' || (value as FlowInputMapping).source === 'literal') &&
+    typeof (value as FlowInputMapping).value === 'string'
+  )
 }

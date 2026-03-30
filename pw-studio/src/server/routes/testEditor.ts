@@ -20,6 +20,12 @@ const testReferenceSchema = z.object({
   testTitle: z.string(),
 })
 
+const flowInputMappingSchema = z.object({
+  targetName: z.string(),
+  source: z.enum(['flow_input', 'literal']),
+  value: z.string(),
+})
+
 const blockFieldValueSchema = z.union([
   z.string(),
   z.boolean(),
@@ -27,6 +33,7 @@ const blockFieldValueSchema = z.union([
   z.null(),
   selectorSpecSchema,
   testReferenceSchema,
+  z.array(flowInputMappingSchema),
 ])
 
 const testBlockSchema = z.object({
@@ -45,10 +52,18 @@ const templateSchema = z.object({
   callbackAsync: z.boolean(),
 })
 
+const flowInputSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  defaultValue: z.string(),
+  exposeAtRunStart: z.boolean(),
+})
+
 const editorDocumentSchema = z.object({
   mode: z.enum(['existing', 'create']),
   filePath: z.string().min(1),
   testTitle: z.string(),
+  flowInputs: z.array(flowInputSchema),
   blocks: z.array(testBlockSchema),
   code: z.string(),
   warnings: z.array(z.string()),

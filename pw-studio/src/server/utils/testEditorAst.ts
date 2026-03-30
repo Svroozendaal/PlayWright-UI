@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import ts from 'typescript'
 import type {
+  FlowInputDefinition,
   TestBlock,
   TestCaseRef,
   TestEditorDocument,
@@ -29,11 +30,23 @@ export type ParsedTestSource = {
 }
 
 type BlockExtractionResult = {
+  flowInputs: FlowInputDefinition[]
   blocks: TestBlock[]
   warnings: string[]
 }
 
+type FlowPrelude = {
+  flowInputs: FlowInputDefinition[]
+  consumedStatements: Set<ts.Statement>
+}
+
 const PLAYWRIGHT_TEST_CALLEE = /^test(?:\.(?:only|skip|fixme|fail|slow))?$/
+const FLOW_RESOLVER_NAME = '__pwResolveFlowInputs'
+const FLOW_DEFAULTS_NAME = '__pwFlowDefaults'
+const FLOW_EXPOSED_NAME = '__pwFlowExposed'
+const FLOW_INPUT_NAME = '__pwFlow'
+const FLOW_ENV_VAR = 'PW_STUDIO_FLOW_INPUTS'
+const PLACEHOLDER_PATTERN = /{{\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}/g
 
 export function parseTestSource(code: string, filePath: string): ParsedTestSource {
   const sourceFile = ts.createSourceFile(
@@ -80,12 +93,17 @@ export function buildDocumentFromParsedTest(
     mode,
     filePath,
     testTitle: parsed.title,
+    flowInputs: extraction.flowInputs,
     blocks: extraction.blocks,
     code: parsed.snippet,
     warnings: extraction.warnings,
     template: parsed.template,
     testCaseRef: mode === 'existing' ? parsed.testCaseRef : undefined,
   }
+}
+
+export function extractFlowInputsFromBody(body: ts.Block): FlowInputDefinition[] {
+  return parseFlowPrelude(body).flowInputs
 }
 
 export function parseSnippetToDocument(
@@ -118,17 +136,46 @@ export function parseSnippetToDocument(
 }
 
 export function renderDocumentCode(
-  document: Pick<TestEditorDocument, 'testTitle' | 'blocks' | 'template'>,
+  document: Pick<TestEditorDocument, 'testTitle' | 'flowInputs' | 'blocks' | 'template'>,
   definitions: ServerBlockDefinition[],
   context: ServerBlockContext & { eol?: string } = {}
 ): string {
   const eol = context.eol ?? '\n'
-  const body = renderBody(document.blocks, definitions, eol, context)
+  const body = renderDocumentBody(document, definitions, context, eol)
   const args = [quoteString(document.testTitle), ...document.template.extraArgs]
   const callback = renderCallback(document.template, body, eol)
   args.push(callback)
 
   return `${document.template.callee}(${args.join(', ')})`
+}
+
+export function renderDocumentBody(
+  document: Pick<TestEditorDocument, 'flowInputs' | 'blocks'>,
+  definitions: ServerBlockDefinition[],
+  context: ServerBlockContext = {},
+  eol = '\n'
+): string {
+  const flowPrelude = renderFlowPrelude(document.flowInputs, eol)
+  const body = renderBody(document.blocks, definitions, eol, {
+    ...context,
+    flowInputs: document.flowInputs,
+    flowInputAccessor: context.flowInputAccessor ?? FLOW_INPUT_NAME,
+  })
+
+  if (flowPrelude.length > 0 && body.length > 0) {
+    return `${flowPrelude}${eol}${body}`
+  }
+
+  return flowPrelude || body
+}
+
+export function renderBlocksOnly(
+  blocks: TestBlock[],
+  definitions: ServerBlockDefinition[],
+  context: ServerBlockContext = {},
+  eol = '\n'
+): string {
+  return renderBody(blocks, definitions, eol, context)
 }
 
 export function replaceTestInSource(
@@ -179,6 +226,82 @@ export function formatParseDiagnostics(parsed: ParsedTestSource): string[] {
     const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')
     return `Line ${position.line + 1}, column ${position.character + 1}: ${message}`
   })
+}
+
+export function stringifyFlowTemplate(value: string, accessor = FLOW_INPUT_NAME): string {
+  const tokens = collectTemplateTokens(value)
+  if (tokens.length === 0) {
+    return quoteString(value)
+  }
+
+  let output = '`'
+  let cursor = 0
+
+  for (const token of tokens) {
+    output += escapeTemplateSegment(value.slice(cursor, token.index))
+    output += `\${${accessor}.${token.name}}`
+    cursor = token.index + token.match.length
+  }
+
+  output += escapeTemplateSegment(value.slice(cursor))
+  output += '`'
+
+  return output
+}
+
+export function parseTemplateExpression(
+  node: ts.Node | undefined,
+  accessorNames = [FLOW_INPUT_NAME]
+): string | null {
+  if (!node) {
+    return null
+  }
+
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return node.text
+  }
+
+  if (!ts.isTemplateExpression(node)) {
+    return null
+  }
+
+  let value = node.head.text
+
+  for (const span of node.templateSpans) {
+    const name = parseTemplatePlaceholder(span.expression, accessorNames)
+    if (!name) {
+      return null
+    }
+
+    value += `{{${name}}}${span.literal.text}`
+  }
+
+  return value
+}
+
+export function validateFlowTemplate(value: string, flowInputs: FlowInputDefinition[]): string[] {
+  const available = new Set(flowInputs.map((entry) => entry.name))
+  const errors: string[] = []
+  const tokens = collectTemplateTokens(value)
+  const seen = new Set<string>()
+
+  for (const token of tokens) {
+    if (!available.has(token.name) && !seen.has(token.name)) {
+      errors.push(`Unknown flow input placeholder: {{${token.name}}}`)
+      seen.add(token.name)
+    }
+  }
+
+  const unmatchedOpen = value.match(/{{/g)?.length ?? 0
+  if (unmatchedOpen !== tokens.length) {
+    errors.push('Unresolved placeholder syntax found. Use {{InputName}} with a valid input name.')
+  }
+
+  return errors
+}
+
+export function validateFlowInputName(name: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
 }
 
 function getScriptKind(filePath: string): ts.ScriptKind {
@@ -274,20 +397,51 @@ function hasAsyncModifier(node: CallbackNode): boolean {
 }
 
 function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinition[]): BlockExtractionResult {
+  const flowPrelude = parseFlowPrelude(body)
   const blocks: TestBlock[] = []
   const warnings: string[] = []
   const sourceFile = body.getSourceFile()
   const sourceText = sourceFile.text
+  const groupParsers = definitions.filter(
+    (definition) => typeof definition.parseLeadingStatements === 'function'
+  )
   const parsers = definitions.filter((definition) => typeof definition.parseStatement === 'function')
+  const statements = [...body.statements]
   let cursor = body.getStart(sourceFile) + 1
   let sawUnsupportedCode = false
 
-  for (const statement of body.statements) {
+  for (let index = 0; index < statements.length; index += 1) {
+    const statement = statements[index]
+    if (!statement) {
+      continue
+    }
+
     const statementStart = statement.getStart(sourceFile)
+    const statementEnd = statement.end
     const leading = sourceText.slice(cursor, statementStart)
     if (containsMeaningfulText(leading)) {
       blocks.push(createRawCodeBlock(normaliseRawCode(leading)))
       sawUnsupportedCode = true
+    }
+
+    if (flowPrelude.consumedStatements.has(statement)) {
+      cursor = statementEnd
+      continue
+    }
+
+    if (blocks.length === 0 && !sawUnsupportedCode) {
+      const remainingStatements = statements.slice(index)
+      const grouped = groupParsers
+        .map((definition) => definition.parseLeadingStatements?.(remainingStatements, sourceFile))
+        .find((value): value is { block: TestBlock; consumedCount: number } => Boolean(value && value.consumedCount > 0))
+
+      if (grouped) {
+        const lastStatement = remainingStatements[grouped.consumedCount - 1]
+        blocks.push(grouped.block)
+        cursor = lastStatement?.end ?? statementEnd
+        index += grouped.consumedCount - 1
+        continue
+      }
     }
 
     const titleComment = getStatementTitleComment(sourceFile, sourceText, statement)
@@ -300,14 +454,14 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
     } else {
       blocks.push(
         createRawCodeBlock(
-          normaliseRawCode(sourceText.slice(statementStart, statement.end)),
+          normaliseRawCode(sourceText.slice(statementStart, statementEnd)),
           titleComment?.title ?? undefined
         )
       )
       sawUnsupportedCode = true
     }
 
-    cursor = titleComment?.end ?? statement.end
+    cursor = titleComment?.end ?? statementEnd
   }
 
   const trailing = sourceText.slice(cursor, body.end - 1)
@@ -322,7 +476,143 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
     warnings.push('Some lines remain raw code blocks because they do not map to a supported visual block yet.')
   }
 
-  return { blocks: titledBlocks, warnings }
+  return { flowInputs: flowPrelude.flowInputs, blocks: titledBlocks, warnings }
+}
+
+function parseFlowPrelude(body: ts.Block): FlowPrelude {
+  const consumedStatements = new Set<ts.Statement>()
+  const statements = [...body.statements]
+  let index = 0
+
+  if (isFlowResolverDeclaration(statements[index])) {
+    consumedStatements.add(statements[index] as ts.Statement)
+    index += 1
+  }
+
+  const defaultsStatement = statements[index]
+  const defaults = parseFlowDefaultsStatement(defaultsStatement)
+  if (!defaults) {
+    return { flowInputs: [], consumedStatements: new Set() }
+  }
+
+  consumedStatements.add(defaultsStatement as ts.Statement)
+  index += 1
+
+  let exposedNames: string[] = []
+  const exposedStatement = statements[index]
+  const parsedExposed = parseFlowExposedStatement(exposedStatement)
+  if (parsedExposed) {
+    exposedNames = parsedExposed
+    consumedStatements.add(exposedStatement as ts.Statement)
+    index += 1
+  }
+
+  const resolvedStatement = statements[index]
+  if (isFlowResolverAssignment(resolvedStatement)) {
+    consumedStatements.add(resolvedStatement as ts.Statement)
+  }
+
+  return {
+    flowInputs: Object.entries(defaults).map(([name, defaultValue]) => ({
+      id: randomUUID(),
+      name,
+      defaultValue,
+      exposeAtRunStart: exposedNames.includes(name),
+    })),
+    consumedStatements,
+  }
+}
+
+function isFlowResolverDeclaration(statement: ts.Statement | undefined): boolean {
+  return Boolean(
+    statement &&
+      ts.isFunctionDeclaration(statement) &&
+      statement.name?.text === FLOW_RESOLVER_NAME
+  )
+}
+
+function parseFlowDefaultsStatement(statement: ts.Statement | undefined): Record<string, string> | null {
+  if (!statement || !ts.isVariableStatement(statement)) {
+    return null
+  }
+
+  const declaration = statement.declarationList.declarations[0]
+  if (!declaration || !ts.isIdentifier(declaration.name) || declaration.name.text !== FLOW_DEFAULTS_NAME) {
+    return null
+  }
+
+  if (!declaration.initializer || !ts.isObjectLiteralExpression(declaration.initializer)) {
+    return null
+  }
+
+  const values: Record<string, string> = {}
+  for (const property of declaration.initializer.properties) {
+    if (!ts.isPropertyAssignment(property)) {
+      return null
+    }
+
+    const key = getPropertyNameText(property.name)
+    const value = parseTemplateExpression(property.initializer)
+    if (!key || value === null) {
+      return null
+    }
+
+    values[key] = value
+  }
+
+  return values
+}
+
+function parseFlowExposedStatement(statement: ts.Statement | undefined): string[] | null {
+  if (!statement || !ts.isVariableStatement(statement)) {
+    return null
+  }
+
+  const declaration = statement.declarationList.declarations[0]
+  if (!declaration || !ts.isIdentifier(declaration.name) || declaration.name.text !== FLOW_EXPOSED_NAME) {
+    return null
+  }
+
+  if (!declaration.initializer || !ts.isArrayLiteralExpression(declaration.initializer)) {
+    return null
+  }
+
+  const values: string[] = []
+  for (const element of declaration.initializer.elements) {
+    const value = parseTemplateExpression(element)
+    if (value === null) {
+      return null
+    }
+    values.push(value)
+  }
+
+  return values
+}
+
+function isFlowResolverAssignment(statement: ts.Statement | undefined): boolean {
+  if (!statement || !ts.isVariableStatement(statement)) {
+    return false
+  }
+
+  const declaration = statement.declarationList.declarations[0]
+  if (!declaration || !ts.isIdentifier(declaration.name) || declaration.name.text !== FLOW_INPUT_NAME) {
+    return false
+  }
+
+  if (!declaration.initializer || !ts.isCallExpression(declaration.initializer)) {
+    return false
+  }
+
+  const expression = declaration.initializer.expression
+  return ts.isIdentifier(expression) && expression.text === FLOW_RESOLVER_NAME
+}
+
+function getPropertyNameText(name: ts.PropertyName): string | null {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
+    return name.text
+  }
+
+  return null
 }
 
 function containsMeaningfulText(value: string): boolean {
@@ -449,6 +739,41 @@ function createRawCodeBlock(code: string, title?: string): TestBlock {
   }
 }
 
+function renderFlowPrelude(flowInputs: FlowInputDefinition[], eol: string): string {
+  if (flowInputs.length === 0) {
+    return ''
+  }
+
+  const defaultsEntries = flowInputs
+    .map((input) => `  ${input.name}: ${quoteString(input.defaultValue)},`)
+    .join(eol)
+  const exposedEntries = flowInputs
+    .filter((input) => input.exposeAtRunStart)
+    .map((input) => quoteString(input.name))
+    .join(', ')
+
+  return [
+    `function ${FLOW_RESOLVER_NAME}(defaults: Record<string, string>, _exposedAtRunStart: readonly string[], rawOverrides?: string) {`,
+    '  if (!rawOverrides) {',
+    '    return defaults',
+    '  }',
+    '',
+    '  try {',
+    '    const parsed = JSON.parse(rawOverrides) as Record<string, unknown>',
+    "    const overrides = Object.fromEntries(Object.entries(parsed ?? {}).filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string'))",
+    '    return { ...defaults, ...overrides }',
+    '  } catch {',
+    '    return defaults',
+    '  }',
+    '}',
+    `const ${FLOW_DEFAULTS_NAME} = {`,
+    defaultsEntries,
+    '};',
+    `const ${FLOW_EXPOSED_NAME} = [${exposedEntries}];`,
+    `const ${FLOW_INPUT_NAME} = ${FLOW_RESOLVER_NAME}(${FLOW_DEFAULTS_NAME}, ${FLOW_EXPOSED_NAME}, process.env.${FLOW_ENV_VAR});`,
+  ].join(eol)
+}
+
 function renderBody(
   blocks: TestBlock[],
   definitions: ServerBlockDefinition[],
@@ -493,12 +818,43 @@ function renderBlock(
   return `// ${sanitiseTitle(block.title)}\n${code}`
 }
 
+function parseTemplatePlaceholder(expression: ts.Expression, accessorNames: string[]): string | null {
+  if (!ts.isPropertyAccessExpression(expression) || !ts.isIdentifier(expression.expression)) {
+    return null
+  }
+
+  if (!accessorNames.includes(expression.expression.text)) {
+    return null
+  }
+
+  return expression.name.text
+}
+
+function collectTemplateTokens(value: string): Array<{ match: string; name: string; index: number }> {
+  const matches: Array<{ match: string; name: string; index: number }> = []
+  for (const match of value.matchAll(PLACEHOLDER_PATTERN)) {
+    matches.push({
+      match: match[0],
+      name: match[1] ?? '',
+      index: match.index ?? 0,
+    })
+  }
+  return matches
+}
+
 function quoteString(value: string): string {
   return `'${value
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'")
     .replace(/\r/g, '\\r')
     .replace(/\n/g, '\\n')}'`
+}
+
+function escapeTemplateSegment(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${')
 }
 
 function indentBlock(block: string, eol: string, indent: string): string {

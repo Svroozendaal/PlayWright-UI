@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { AvailableTestCase, ExplorerNode } from '../../shared/types/ipc'
 import type { PlaywrightConfigService } from './PlaywrightConfigService'
-import { formatParseDiagnostics, parseTestSource } from '../utils/testEditorAst'
+import { extractFlowInputsFromBody, formatParseDiagnostics, parseTestSource } from '../utils/testEditorAst'
 
 export type ParseWarning = {
   filePath: string
@@ -181,6 +181,18 @@ function collectTestCases(
   for (const node of nodes) {
     if (node.type === 'testFile' && node.children) {
       const relativePath = path.relative(rootPath, node.path).replace(/\\/g, '/')
+      let flowInputsByOrdinal = new Map<number, AvailableTestCase['flowInputs']>()
+
+      try {
+        const content = fs.readFileSync(node.path, 'utf8')
+        const parsed = parseTestSource(content, node.path)
+        flowInputsByOrdinal = new Map(
+          parsed.testCases.map((testCase) => [testCase.ordinal, extractFlowInputsFromBody(testCase.body)] as const)
+        )
+      } catch {
+        flowInputsByOrdinal = new Map()
+      }
+
       for (const child of node.children) {
         if (child.type !== 'testCase' || !child.testCaseRef) {
           continue
@@ -191,6 +203,7 @@ function collectTestCases(
           ordinal: child.testCaseRef.ordinal,
           testTitle: child.testCaseRef.testTitle,
           label: `${child.testCaseRef.testTitle} (${relativePath})`,
+          flowInputs: flowInputsByOrdinal.get(child.testCaseRef.ordinal) ?? [],
         })
       }
     }

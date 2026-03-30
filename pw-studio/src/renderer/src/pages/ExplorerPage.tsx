@@ -6,6 +6,7 @@ import type {
   ExplorerNode,
   IpcEnvelope,
   RunRequest,
+  TestCaseRef,
   TestEditorDocument,
   TestStatusMap,
 } from '../../../shared/types/ipc'
@@ -102,7 +103,7 @@ export function ExplorerPage(): JSX.Element {
   const [searchFilter, setSearchFilter] = useState('')
   const [lastResults, setLastResults] = useState<TestStatusMap>({})
   const [runDialog, setRunDialog] = useState<{
-    targetPath?: string; target?: string; testTitleFilter?: string
+    targetPath?: string; target?: string; testTitleFilter?: string; testCaseRef?: TestCaseRef
   } | null>(null)
   const [createTestFilePath, setCreateTestFilePath] = useState<string | null>(null)
 
@@ -456,7 +457,11 @@ export function ExplorerPage(): JSX.Element {
                   testCaseRef={selectedNode.testCaseRef}
                   onRun={() => void handleQuickRun(selectedNode)}
                   onRunWithOptions={() => {
-                    setRunDialog({ targetPath: selectedNode.path, testTitleFilter: selectedNode.testTitle })
+                    setRunDialog({
+                      targetPath: selectedNode.path,
+                      testTitleFilter: selectedNode.testTitle,
+                      testCaseRef: selectedNode.testCaseRef,
+                    })
                   }}
                   onSaved={(savedDocument) => {
                     void handleTestEditorSaved(savedDocument)
@@ -646,7 +651,11 @@ export function ExplorerPage(): JSX.Element {
               </button>
               <button className="context-menu-item" onClick={() => {
                 setContextMenu(null)
-                setRunDialog({ targetPath: contextMenu.node.path, testTitleFilter: contextMenu.node.testTitle })
+                setRunDialog({
+                  targetPath: contextMenu.node.path,
+                  testTitleFilter: contextMenu.node.testTitle,
+                  testCaseRef: contextMenu.node.testCaseRef,
+                })
               }}>
                 Run with Options...
               </button>
@@ -661,6 +670,7 @@ export function ExplorerPage(): JSX.Element {
           targetPath={runDialog.targetPath}
           target={runDialog.target}
           testTitleFilter={runDialog.testTitleFilter}
+          testCaseRef={runDialog.testCaseRef}
           onClose={() => setRunDialog(null)}
           onStarted={(newRunId) => {
             setRunDialog(null)

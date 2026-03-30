@@ -598,6 +598,15 @@ function TemplateFieldEditor({
           <div className="settings-value">Source tests are selected in the visual editor per project.</div>
         </div>
       )
+    case 'flow_mapping':
+      return (
+        <div className="form-group">
+          <label>{field.label}</label>
+          <div className="settings-value">
+            Flow input mappings are configured in the visual editor after selecting a source subflow.
+          </div>
+        </div>
+      )
     case 'text':
     default:
       return (
@@ -712,6 +721,8 @@ function getDefaultFieldValue(field: BlockFieldSchema): BlockFieldValue {
       return { strategy: 'role', value: 'button', name: '' }
     case 'test_case':
       return null
+    case 'flow_mapping':
+      return []
     case 'select':
       return field.options?.[0]?.value ?? ''
     case 'textarea':
@@ -750,6 +761,11 @@ function getDetailOptions(definition?: BlockDefinition): BlockDisplayConfig['det
 
     if (field.key === 'code') {
       options.add('code')
+      continue
+    }
+
+    if (field.key === 'definitions') {
+      options.add('definitions')
       continue
     }
 
