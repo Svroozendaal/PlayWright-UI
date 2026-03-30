@@ -55,7 +55,12 @@
       "Bash(xargs ls:*)",
       "Bash(grep -E \"\\\\.ts$\")",
       "Bash(find 'c:\\\\Workspaces\\\\PlayWright UI\\\\pw-studio\\\\src\\\\main' -type f -name *.ts -o -name *.tsx)",
-      "Bash(find 'c:\\\\Workspaces\\\\PlayWright UI\\\\pw-studio\\\\src\\\\renderer\\\\src' -type f \\\\\\(-name *.css -o -name *.scss \\\\\\))"
+      "Bash(find 'c:\\\\Workspaces\\\\PlayWright UI\\\\pw-studio\\\\src\\\\renderer\\\\src' -type f \\\\\\(-name *.css -o -name *.scss \\\\\\))",
+      "Bash(find 'c:\\\\Workspaces\\\\PlayWright UI' -path */node_modules -prune -o -type f \\\\\\(-name *block* -o -name *editor* -o -name *properties* \\\\\\) -print)",
+      "Bash(find 'c:\\\\Workspaces\\\\PlayWright UI\\\\pw-studio\\\\src' -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\))",
+      "Bash(grep -r \"BlockDefinition\\\\|BlockTemplate\\\\|TestBlock\" 'c:\\\\Workspaces\\\\PlayWright UI\\\\pw-studio\\\\src\\\\shared' --include=*.ts --include=*.tsx)",
+      "Bash(grep -n \"case ''flow_mapping''\" \"c:/Workspaces/PlayWright UI/pw-studio/src/renderer/src/components/TestBlockEditor.tsx\")",
+      "Bash(grep -B5 -A20 \"case ''flow_mapping''\" \"c:/Workspaces/PlayWright UI/pw-studio/src/renderer/src/components/TestBlockEditor.tsx\")"
     ]
   }
 }

@@ -31,6 +31,7 @@ export type ParsedTestSource = {
 
 type BlockExtractionResult = {
   flowInputs: FlowInputDefinition[]
+  constants: string[]
   blocks: TestBlock[]
   warnings: string[]
 }
@@ -94,6 +95,7 @@ export function buildDocumentFromParsedTest(
     filePath,
     testTitle: parsed.title,
     flowInputs: extraction.flowInputs,
+    constants: extraction.constants,
     blocks: extraction.blocks,
     code: parsed.snippet,
     warnings: extraction.warnings,
@@ -160,6 +162,7 @@ export function renderDocumentBody(
     ...context,
     flowInputs: document.flowInputs,
     flowInputAccessor: context.flowInputAccessor ?? FLOW_INPUT_NAME,
+    constants: context.constants ?? [],
   })
 
   if (flowPrelude.length > 0 && body.length > 0) {
@@ -228,10 +231,36 @@ export function formatParseDiagnostics(parsed: ParsedTestSource): string[] {
   })
 }
 
-export function stringifyFlowTemplate(value: string, accessor = FLOW_INPUT_NAME): string {
+export function extractConstantNames(definitionsCode: string): string[] {
+  const wrapped = `async function __pw() {\n${definitionsCode}\n}`
+  const sf = ts.createSourceFile('__pw.ts', wrapped, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const fn = sf.statements[0]
+  if (!fn || !ts.isFunctionDeclaration(fn) || !fn.body) return []
+  const names: string[] = []
+  for (const stmt of fn.body.statements) {
+    if (ts.isVariableStatement(stmt) && (stmt.declarationList.flags & ts.NodeFlags.Const) !== 0) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (ts.isIdentifier(decl.name)) names.push(decl.name.text)
+      }
+    }
+  }
+  return names
+}
+
+export function stringifyFlowTemplate(value: string, accessor = FLOW_INPUT_NAME, constants: string[] = []): string {
   const tokens = collectTemplateTokens(value)
   if (tokens.length === 0) {
     return quoteString(value)
+  }
+
+  // If every token is a constant, and the entire value is a single token with no surrounding text, emit the bare identifier.
+  if (tokens.length === 1 && tokens[0] && constants.includes(tokens[0].name)) {
+    const token = tokens[0]
+    const before = value.slice(0, token.index)
+    const after = value.slice(token.index + token.match.length)
+    if (before.trim() === '' && after.trim() === '') {
+      return token.name
+    }
   }
 
   let output = '`'
@@ -239,7 +268,11 @@ export function stringifyFlowTemplate(value: string, accessor = FLOW_INPUT_NAME)
 
   for (const token of tokens) {
     output += escapeTemplateSegment(value.slice(cursor, token.index))
-    output += `\${${accessor}.${token.name}}`
+    if (constants.includes(token.name)) {
+      output += `\${${token.name}}`
+    } else {
+      output += `\${${accessor}.${token.name}}`
+    }
     cursor = token.index + token.match.length
   }
 
@@ -251,10 +284,15 @@ export function stringifyFlowTemplate(value: string, accessor = FLOW_INPUT_NAME)
 
 export function parseTemplateExpression(
   node: ts.Node | undefined,
-  accessorNames = [FLOW_INPUT_NAME]
+  accessorNames = [FLOW_INPUT_NAME],
+  knownIdentifiers: string[] = []
 ): string | null {
   if (!node) {
     return null
+  }
+
+  if (ts.isIdentifier(node) && knownIdentifiers.includes(node.text)) {
+    return `{{${node.text}}}`
   }
 
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
@@ -279,14 +317,14 @@ export function parseTemplateExpression(
   return value
 }
 
-export function validateFlowTemplate(value: string, flowInputs: FlowInputDefinition[]): string[] {
+export function validateFlowTemplate(value: string, flowInputs: FlowInputDefinition[], constants: string[] = []): string[] {
   const available = new Set(flowInputs.map((entry) => entry.name))
   const errors: string[] = []
   const tokens = collectTemplateTokens(value)
   const seen = new Set<string>()
 
   for (const token of tokens) {
-    if (!available.has(token.name) && !seen.has(token.name)) {
+    if (!available.has(token.name) && !constants.includes(token.name) && !seen.has(token.name)) {
       errors.push(`Unknown flow input placeholder: {{${token.name}}}`)
       seen.add(token.name)
     }
@@ -400,6 +438,7 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
   const flowPrelude = parseFlowPrelude(body)
   const blocks: TestBlock[] = []
   const warnings: string[] = []
+  let constants: string[] = []
   const sourceFile = body.getSourceFile()
   const sourceText = sourceFile.text
   const groupParsers = definitions.filter(
@@ -419,6 +458,17 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
     const statementStart = statement.getStart(sourceFile)
     const statementEnd = statement.end
     const leading = sourceText.slice(cursor, statementStart)
+    const forcedRawTitle = parseStandaloneTitleComment(leading)
+    if (forcedRawTitle) {
+      const rawEndIndex = findForcedRawEndIndex(statements, index, sourceText, sourceFile)
+      const lastRawStatement = statements[rawEndIndex]
+      const rawSource = sourceText.slice(statementStart, lastRawStatement?.end ?? statementEnd)
+      blocks.push(createRawCodeBlock(normaliseRawCode(rawSource), forcedRawTitle))
+      cursor = lastRawStatement?.end ?? statementEnd
+      index = rawEndIndex
+      continue
+    }
+
     if (containsMeaningfulText(leading)) {
       blocks.push(createRawCodeBlock(normaliseRawCode(leading)))
       sawUnsupportedCode = true
@@ -438,6 +488,11 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
       if (grouped) {
         const lastStatement = remainingStatements[grouped.consumedCount - 1]
         blocks.push(grouped.block)
+        // If this is a constants_group block, extract the declared names so subsequent
+        // parseStatement calls can recognise references to them.
+        if (grouped.block.kind === 'constants_group' && typeof grouped.block.values['definitions'] === 'string') {
+          constants = extractConstantNames(grouped.block.values['definitions'])
+        }
         cursor = lastStatement?.end ?? statementEnd
         index += grouped.consumedCount - 1
         continue
@@ -446,7 +501,7 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
 
     const titleComment = getStatementTitleComment(sourceFile, sourceText, statement)
     const mapped = parsers
-      .map((definition) => definition.parseStatement?.(statement, titleComment?.title ?? null))
+      .map((definition) => definition.parseStatement?.(statement, titleComment?.title ?? null, constants))
       .find((value): value is TestBlock => Boolean(value))
 
     if (mapped) {
@@ -476,7 +531,7 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
     warnings.push('Some lines remain raw code blocks because they do not map to a supported visual block yet.')
   }
 
-  return { flowInputs: flowPrelude.flowInputs, blocks: titledBlocks, warnings }
+  return { flowInputs: flowPrelude.flowInputs, constants, blocks: titledBlocks, warnings }
 }
 
 function parseFlowPrelude(body: ts.Block): FlowPrelude {
@@ -617,6 +672,47 @@ function getPropertyNameText(name: ts.PropertyName): string | null {
 
 function containsMeaningfulText(value: string): boolean {
   return /\S/.test(value)
+}
+
+function parseStandaloneTitleComment(value: string): string | null {
+  const normalised = value.replace(/\r\n/g, '\n')
+  const trimmed = normalised.trim()
+  if (trimmed.length === 0) {
+    return null
+  }
+
+  const match = trimmed.match(/^\/\/\s*(.+)$/)
+  if (!match?.[1]) {
+    return null
+  }
+
+  return match[1].trim()
+}
+
+function findForcedRawEndIndex(
+  statements: ts.Statement[],
+  startIndex: number,
+  sourceText: string,
+  sourceFile: ts.SourceFile
+): number {
+  let endIndex = startIndex
+
+  for (let index = startIndex; index < statements.length - 1; index += 1) {
+    const current = statements[index]
+    const next = statements[index + 1]
+    if (!current || !next) {
+      break
+    }
+
+    const gap = sourceText.slice(current.end, next.getStart(sourceFile))
+    if (/\n\s*\n/.test(gap)) {
+      break
+    }
+
+    endIndex = index + 1
+  }
+
+  return endIndex
 }
 
 function normaliseRawCode(value: string): string {

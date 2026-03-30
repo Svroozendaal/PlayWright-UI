@@ -95,6 +95,7 @@ const persistedDocumentSchema = z.object({
   filePath: z.string().min(1),
   testTitle: z.string(),
   flowInputs: z.array(flowInputSchema),
+  constants: z.array(z.string()).default([]),
   blocks: z.array(persistedBlockSchema),
   code: z.string(),
   warnings: z.array(z.string()),
@@ -151,6 +152,7 @@ export class TestEditorService {
       filePath,
       testTitle: 'New visual test',
       flowInputs: [],
+      constants: [],
       blocks: [],
       code: '',
       warnings: [],
@@ -162,6 +164,7 @@ export class TestEditorService {
       code: renderDocumentCode(draft, this.getDefinitions(rootPath), {
         rootPath,
         documentFilePath: draft.filePath,
+        constants: draft.constants,
       }),
     }
   }
@@ -241,6 +244,7 @@ export class TestEditorService {
       rootPath,
       documentFilePath: document.filePath,
       documentTestCaseRef: document.testCaseRef,
+      constants: document.constants,
     })
     const synced = this.parseRenderedDocument(rootPath, rendered, document.filePath, 'existing')
     const nextSource = replaceTestInSource(source, current, synced.code)
@@ -273,6 +277,7 @@ export class TestEditorService {
       eol: detectEol(source),
       rootPath,
       documentFilePath: document.filePath,
+      constants: document.constants,
     })
     const synced = this.parseRenderedDocument(rootPath, rendered, document.filePath, 'create')
     const nextSource = appendTestToSource(source, synced.code, detectEol(source))

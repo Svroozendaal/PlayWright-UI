@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useParams } from 'react-router-dom'
+import { useTheme } from '../contexts/ThemeContext'
+import type { ThemeSetting } from '../contexts/ThemeContext'
 import { IPC } from '../../../shared/types/ipc'
 import type {
   IpcEnvelope,
@@ -14,6 +16,7 @@ import { api } from '../api/client'
 export function SettingsPage(): JSX.Element {
   const { id: projectId } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { theme, setTheme } = useTheme()
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [copied, setCopied] = useState(false)
   const [project, setProject] = useState<RegisteredProject | null>(null)
@@ -135,6 +138,24 @@ export function SettingsPage(): JSX.Element {
             </div>
           </div>
         )}
+
+        <div className="settings-section">
+          <h3>Appearance</h3>
+          <div className="settings-row">
+            <span className="settings-label">Theme</span>
+            <div className="theme-toggle">
+              {(['light', 'system', 'dark'] as ThemeSetting[]).map((option) => (
+                <button
+                  key={option}
+                  className={`theme-toggle-btn ${theme === option ? 'active' : ''}`}
+                  onClick={() => setTheme(option)}
+                >
+                  {option === 'light' ? '☀ Light' : option === 'dark' ? '☾ Dark' : '⊙ System'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
         <div className="settings-section">
           <h3>App</h3>

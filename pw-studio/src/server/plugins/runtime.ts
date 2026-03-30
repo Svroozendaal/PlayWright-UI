@@ -44,6 +44,7 @@ export type ServerBlockContext = {
   documentTestCaseRef?: TestCaseRef
   flowInputAccessor?: string
   flowInputs?: FlowInputDefinition[]
+  constants?: string[]
 }
 
 export type ServerBlockDefinition = BlockDefinition & {
@@ -51,7 +52,7 @@ export type ServerBlockDefinition = BlockDefinition & {
     statements: readonly ts.Statement[],
     sourceFile: ts.SourceFile
   ) => { block: TestBlock; consumedCount: number } | null
-  parseStatement?: (statement: ts.Statement, title: string | null) => TestBlock | null
+  parseStatement?: (statement: ts.Statement, title: string | null, constants?: string[]) => TestBlock | null
   render: (block: TestBlock, context: ServerBlockContext) => string
   validate?: (block: TestBlock, context: ServerBlockContext) => string[]
 }

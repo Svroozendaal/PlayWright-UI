@@ -629,6 +629,7 @@ export type TestEditorDocument = {
   filePath: string
   testTitle: string
   flowInputs: FlowInputDefinition[]
+  constants: string[]
   blocks: TestBlock[]
   code: string
   warnings: string[]

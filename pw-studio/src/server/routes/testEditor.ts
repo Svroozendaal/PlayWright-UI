@@ -9,7 +9,7 @@ const testCaseRefSchema = z.object({
 })
 
 const selectorSpecSchema = z.object({
-  strategy: z.enum(['role', 'text', 'label', 'test_id', 'css']),
+  strategy: z.enum(['role', 'text', 'label', 'test_id', 'css', 'placeholder']),
   value: z.string(),
   name: z.string().optional(),
 })
@@ -64,6 +64,7 @@ const editorDocumentSchema = z.object({
   filePath: z.string().min(1),
   testTitle: z.string(),
   flowInputs: z.array(flowInputSchema),
+  constants: z.array(z.string()).default([]),
   blocks: z.array(testBlockSchema),
   code: z.string(),
   warnings: z.array(z.string()),

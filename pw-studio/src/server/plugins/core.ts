@@ -81,9 +81,9 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
       { key: 'url', label: 'URL', type: 'text', required: true, placeholder: 'https://example.com/' },
     ],
     display: { label: 'Go to URL', detailSource: 'url', separator: ': ' },
-    parseStatement: (statement, title) => parseGotoBlock(statement, title),
+    parseStatement: (statement, title, constants) => parseGotoBlock(statement, title, constants),
     render: (block, context) => `await page.goto(${renderFlowString(readStringValue(block, 'url'), context)});${renderTitleComment(block)}`,
-    validate: (block, context) => validateStringTemplates([readStringValue(block, 'url')], context.flowInputs),
+    validate: (block, context) => validateStringTemplates([readStringValue(block, 'url')], context.flowInputs, context.constants),
   },
   {
     kind: 'click_element',
@@ -94,7 +94,7 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
     builtIn: true,
     fields: [{ key: 'selector', label: 'Selector', type: 'selector', required: true }],
     display: { label: 'Click element', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
-    parseStatement: (statement, title) => parseClickBlock(statement, title),
+    parseStatement: (statement, title, constants) => parseClickBlock(statement, title, constants),
     render: (block, context) => `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.click();${renderTitleComment(block)}`,
     validate: (block, context) => validateSelectorBlock(block, context.flowInputs),
   },
@@ -110,12 +110,12 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
       { key: 'value', label: 'Value', type: 'text', required: true },
     ],
     display: { label: 'Fill field', detailSource: 'selector.value', quoteDetail: true, separator: ': ' },
-    parseStatement: (statement, title) => parseFillBlock(statement, title),
+    parseStatement: (statement, title, constants) => parseFillBlock(statement, title, constants),
     render: (block, context) =>
       `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.fill(${renderFlowString(readStringValue(block, 'value'), context)});${renderTitleComment(block)}`,
     validate: (block, context) => [
       ...validateSelectorBlock(block, context.flowInputs),
-      ...validateStringTemplates([readStringValue(block, 'value')], context.flowInputs),
+      ...validateStringTemplates([readStringValue(block, 'value')], context.flowInputs, context.constants),
     ],
   },
   {
@@ -129,9 +129,9 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
       { key: 'url', label: 'Expected URL', type: 'text', required: true, placeholder: 'https://example.com/dashboard' },
     ],
     display: { label: 'Expect URL', detailSource: 'url', separator: ': ' },
-    parseStatement: (statement, title) => parseExpectUrlBlock(statement, title),
+    parseStatement: (statement, title, constants) => parseExpectUrlBlock(statement, title, constants),
     render: (block, context) => `await expect(page).toHaveURL(${renderFlowString(readStringValue(block, 'url'), context)});${renderTitleComment(block)}`,
-    validate: (block, context) => validateStringTemplates([readStringValue(block, 'url')], context.flowInputs),
+    validate: (block, context) => validateStringTemplates([readStringValue(block, 'url')], context.flowInputs, context.constants),
   },
   {
     kind: 'use_subflow',
@@ -159,7 +159,7 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
     builtIn: true,
     fields: [{ key: 'selector', label: 'Selector', type: 'selector', required: true }],
     display: { label: 'Expect visible', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
-    parseStatement: (statement, title) => parseExpectVisibleBlock(statement, title),
+    parseStatement: (statement, title, constants) => parseExpectVisibleBlock(statement, title, constants),
     render: (block, context) => `await expect(${renderSelector(readSelectorValue(block, 'selector'), context)}).toBeVisible();${renderTitleComment(block)}`,
     validate: (block, context) => validateSelectorBlock(block, context.flowInputs),
   },
@@ -175,12 +175,12 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
       { key: 'key', label: 'Key', type: 'text', required: true, placeholder: 'Enter' },
     ],
     display: { label: 'Press key', detailSource: 'value', quoteDetail: true, separator: ': ' },
-    parseStatement: (statement, title) => parsePressKeyBlock(statement, title),
+    parseStatement: (statement, title, constants) => parsePressKeyBlock(statement, title, constants),
     render: (block, context) =>
       `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.press(${renderFlowString(readStringValue(block, 'key'), context)});${renderTitleComment(block)}`,
     validate: (block, context) => [
       ...validateSelectorBlock(block, context.flowInputs),
-      ...validateStringTemplates([readStringValue(block, 'key')], context.flowInputs),
+      ...validateStringTemplates([readStringValue(block, 'key')], context.flowInputs, context.constants),
     ],
   },
   {
@@ -195,12 +195,12 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
       { key: 'value', label: 'Option value', type: 'text', required: true, placeholder: 'option-value' },
     ],
     display: { label: 'Select option', detailSource: 'value', quoteDetail: true, separator: ': ' },
-    parseStatement: (statement, title) => parseSelectOptionBlock(statement, title),
+    parseStatement: (statement, title, constants) => parseSelectOptionBlock(statement, title, constants),
     render: (block, context) =>
       `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.selectOption(${renderFlowString(readStringValue(block, 'value'), context)});${renderTitleComment(block)}`,
     validate: (block, context) => [
       ...validateSelectorBlock(block, context.flowInputs),
-      ...validateStringTemplates([readStringValue(block, 'value')], context.flowInputs),
+      ...validateStringTemplates([readStringValue(block, 'value')], context.flowInputs, context.constants),
     ],
   },
   {
@@ -217,7 +217,7 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
       if (code.trim().length === 0) {
         return `// ${sanitiseTitle(block.title)}`
       }
-      return `// ${sanitiseTitle(block.title)}\n${code}`
+      return `// ${sanitiseTitle(block.title)}\n${code}\n`
     },
     validate: (block) => validateRawCodeBlock(readStringValue(block, 'code')),
   },
@@ -338,7 +338,7 @@ const coreBlockTemplates: BlockTemplate[] = [
   },
 ]
 
-function parseGotoBlock(statement: ts.Statement, title: string | null): TestBlock | null {
+function parseGotoBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
@@ -351,7 +351,7 @@ function parseGotoBlock(statement: ts.Statement, title: string | null): TestBloc
     return null
   }
 
-  const url = parseTemplateExpression(expression.arguments[0])
+  const url = parseTemplateExpression(expression.arguments[0], undefined, constants)
   if (url === null) return null
 
   return createParsedBlock('goto_url', title, { url })
@@ -393,28 +393,28 @@ function parseConstantsGroup(
   }
 }
 
-function parseClickBlock(statement: ts.Statement, title: string | null): TestBlock | null {
+function parseClickBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
   if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'click') return null
-  const selector = parseSelectorExpression(expression.expression.expression)
+  const selector = parseSelectorExpression(expression.expression.expression, constants)
   if (!selector) return null
   return createParsedBlock('click_element', title, { selector })
 }
 
-function parseFillBlock(statement: ts.Statement, title: string | null): TestBlock | null {
+function parseFillBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
   if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'fill') return null
-  const selector = parseSelectorExpression(expression.expression.expression)
-  const value = parseTemplateExpression(expression.arguments[0])
+  const selector = parseSelectorExpression(expression.expression.expression, constants)
+  const value = parseTemplateExpression(expression.arguments[0], undefined, constants)
   if (!selector || value === null) return null
   return createParsedBlock('fill_field', title, { selector, value })
 }
 
-function parseExpectUrlBlock(statement: ts.Statement, title: string | null): TestBlock | null {
+function parseExpectUrlBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
@@ -423,12 +423,12 @@ function parseExpectUrlBlock(statement: ts.Statement, title: string | null): Tes
   if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression) || target.expression.text !== 'expect') return null
   const actual = target.arguments[0]
   if (!actual || !ts.isIdentifier(actual) || actual.text !== 'page') return null
-  const url = parseTemplateExpression(expression.arguments[0])
+  const url = parseTemplateExpression(expression.arguments[0], undefined, constants)
   if (url === null) return null
   return createParsedBlock('expect_url', title, { url })
 }
 
-function parseExpectVisibleBlock(statement: ts.Statement, title: string | null): TestBlock | null {
+function parseExpectVisibleBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
@@ -437,29 +437,29 @@ function parseExpectVisibleBlock(statement: ts.Statement, title: string | null):
   if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression) || target.expression.text !== 'expect') return null
   const selectorArg = target.arguments[0]
   if (!selectorArg) return null
-  const selector = parseSelectorExpression(selectorArg)
+  const selector = parseSelectorExpression(selectorArg, constants)
   if (!selector) return null
   return createParsedBlock('expect_visible', title, { selector })
 }
 
-function parsePressKeyBlock(statement: ts.Statement, title: string | null): TestBlock | null {
+function parsePressKeyBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
   if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'press') return null
-  const selector = parseSelectorExpression(expression.expression.expression)
-  const key = parseTemplateExpression(expression.arguments[0])
+  const selector = parseSelectorExpression(expression.expression.expression, constants)
+  const key = parseTemplateExpression(expression.arguments[0], undefined, constants)
   if (!selector || key === null) return null
   return createParsedBlock('press_key', title, { selector, key })
 }
 
-function parseSelectOptionBlock(statement: ts.Statement, title: string | null): TestBlock | null {
+function parseSelectOptionBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
   if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'selectOption') return null
-  const selector = parseSelectorExpression(expression.expression.expression)
-  const value = parseTemplateExpression(expression.arguments[0])
+  const selector = parseSelectorExpression(expression.expression.expression, constants)
+  const value = parseTemplateExpression(expression.arguments[0], undefined, constants)
   if (!selector || value === null) return null
   return createParsedBlock('select_option', title, { selector, value })
 }
@@ -499,7 +499,7 @@ function unwrapAwait(expression: ts.Expression): ts.Expression {
   return ts.isAwaitExpression(expression) ? expression.expression : expression
 }
 
-function parseSelectorExpression(expression: ts.Expression): SelectorSpec | null {
+function parseSelectorExpression(expression: ts.Expression, constants: string[] = []): SelectorSpec | null {
   if (!ts.isCallExpression(expression) || !ts.isPropertyAccessExpression(expression.expression)) {
     return null
   }
@@ -512,28 +512,28 @@ function parseSelectorExpression(expression: ts.Expression): SelectorSpec | null
 
   switch (property) {
     case 'getByRole': {
-      const role = parseTemplateExpression(expression.arguments[0])
+      const role = parseTemplateExpression(expression.arguments[0], undefined, constants)
       if (role === null) return null
-      return { strategy: 'role', value: role, name: getRoleNameOption(expression.arguments[1]) ?? undefined }
+      return { strategy: 'role', value: role, name: getRoleNameOption(expression.arguments[1], constants) ?? undefined }
     }
     case 'getByText': {
-      const value = parseTemplateExpression(expression.arguments[0])
+      const value = parseTemplateExpression(expression.arguments[0], undefined, constants)
       return value === null ? null : { strategy: 'text', value }
     }
     case 'getByLabel': {
-      const value = parseTemplateExpression(expression.arguments[0])
+      const value = parseTemplateExpression(expression.arguments[0], undefined, constants)
       return value === null ? null : { strategy: 'label', value }
     }
     case 'getByTestId': {
-      const value = parseTemplateExpression(expression.arguments[0])
+      const value = parseTemplateExpression(expression.arguments[0], undefined, constants)
       return value === null ? null : { strategy: 'test_id', value }
     }
     case 'getByPlaceholder': {
-      const value = parseTemplateExpression(expression.arguments[0])
+      const value = parseTemplateExpression(expression.arguments[0], undefined, constants)
       return value === null ? null : { strategy: 'placeholder', value }
     }
     case 'locator': {
-      const value = parseTemplateExpression(expression.arguments[0])
+      const value = parseTemplateExpression(expression.arguments[0], undefined, constants)
       return value === null ? null : { strategy: 'css', value }
     }
     default:
@@ -541,11 +541,11 @@ function parseSelectorExpression(expression: ts.Expression): SelectorSpec | null
   }
 }
 
-function getRoleNameOption(node: ts.Expression | undefined): string | null {
+function getRoleNameOption(node: ts.Expression | undefined, constants: string[] = []): string | null {
   if (!node || !ts.isObjectLiteralExpression(node)) return null
   for (const property of node.properties) {
     if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) && property.name.text === 'name') {
-      return parseTemplateExpression(property.initializer)
+      return parseTemplateExpression(property.initializer, undefined, constants)
     }
   }
   return null
@@ -860,17 +860,17 @@ function validateUseSubflowBlock(block: TestBlock, context: ServerBlockContext):
 
 function renderFlowString(value: string, context: ServerBlockContext): string {
   const accessor = context.flowInputAccessor ?? '__pwFlow'
-  return stringifyFlowTemplate(value, accessor)
+  return stringifyFlowTemplate(value, accessor, context.constants ?? [])
 }
 
-function validateStringTemplates(values: string[], flowInputs: FlowInputDefinition[] | undefined): string[] {
+function validateStringTemplates(values: string[], flowInputs: FlowInputDefinition[] | undefined, constants: string[] = []): string[] {
   if (!flowInputs) {
     return []
   }
 
   return values
     .filter((value) => value.trim().length > 0)
-    .flatMap((value) => validateFlowTemplate(value, flowInputs))
+    .flatMap((value) => validateFlowTemplate(value, flowInputs, constants))
 }
 
 function readStringValue(block: TestBlock, key: string): string {

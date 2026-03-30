@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { ThemeProvider } from './contexts/ThemeContext'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ExplorerPage } from './pages/ExplorerPage'
@@ -17,6 +18,7 @@ import './App.css'
 
 export function App(): JSX.Element {
   return (
+    <ThemeProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<ProjectsPage />} />
@@ -37,5 +39,6 @@ export function App(): JSX.Element {
         <Route path="/settings/block-library" element={<BlockLibraryPage />} />
       </Routes>
     </BrowserRouter>
+    </ThemeProvider>
   )
 }
