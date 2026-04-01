@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { RegisteredProject, HealthSnapshot } from '../../../shared/types/ipc'
+import { UiIcon } from './UiIcon'
+import type { UiIconName } from './UiIcon'
 
 type SidebarProps = {
   project: RegisteredProject
@@ -10,7 +12,7 @@ type SidebarProps = {
 
 type NavItem = {
   label: string
-  icon: string
+  icon: UiIconName
   path: string
 }
 
@@ -36,14 +38,14 @@ export function Sidebar({ project, health, hasActiveRun }: SidebarProps): JSX.El
   const base = `/project/${project.id}`
 
   const navItems: NavItem[] = [
-    { label: 'Dashboard', icon: '\u2302', path: base },
-    { label: 'Explorer', icon: '\u{1F4C1}', path: `${base}/explorer` },
-    { label: 'Suites', icon: '\u25A4', path: `${base}/suites` },
-    { label: 'Runs', icon: '\u25B6', path: `${base}/runs` },
-    { label: 'Recorder', icon: '\u23FA', path: `${base}/recorder` },
-    { label: 'Environments', icon: '\u{1F310}', path: `${base}/environments` },
-    { label: 'Flaky Tests', icon: '\u26A0', path: `${base}/flaky` },
-    { label: 'Integrations', icon: '\u{1F9E9}', path: `${base}/integrations` },
+    { label: 'Dashboard', icon: 'dashboard', path: base },
+    { label: 'Explorer', icon: 'folder', path: `${base}/explorer` },
+    { label: 'Suites', icon: 'grid', path: `${base}/suites` },
+    { label: 'Runs', icon: 'play', path: `${base}/runs` },
+    { label: 'Recorder', icon: 'record', path: `${base}/recorder` },
+    { label: 'Environments', icon: 'globe', path: `${base}/environments` },
+    { label: 'Flaky Tests', icon: 'warning', path: `${base}/flaky` },
+    { label: 'Integrations', icon: 'puzzle', path: `${base}/integrations` },
   ]
 
   /**
@@ -101,7 +103,7 @@ export function Sidebar({ project, health, hasActiveRun }: SidebarProps): JSX.El
             aria-label={isCollapsed ? 'Expand project navigation' : 'Collapse project navigation'}
             title={isCollapsed ? 'Expand navigation' : 'Collapse navigation'}
           >
-            {isCollapsed ? '\u203A' : '\u2039'}
+            <UiIcon name={isCollapsed ? 'collapse-right' : 'collapse-left'} />
           </button>
         </div>
       </div>
@@ -116,7 +118,7 @@ export function Sidebar({ project, health, hasActiveRun }: SidebarProps): JSX.El
             aria-label={item.label}
             title={isCollapsed ? item.label : undefined}
           >
-            <span className="sidebar-nav-icon" aria-hidden="true">{item.icon}</span>
+            <span className="sidebar-nav-icon" aria-hidden="true"><UiIcon name={item.icon} /></span>
             <span className="sidebar-nav-label">{item.label}</span>
             {item.label === 'Runs' && hasActiveRun && (
               <span className="sidebar-run-indicator" />
@@ -133,7 +135,7 @@ export function Sidebar({ project, health, hasActiveRun }: SidebarProps): JSX.El
           aria-label="Settings"
           title={isCollapsed ? 'Settings' : undefined}
         >
-          <span className="sidebar-nav-icon" aria-hidden="true">{'\u2699'}</span>
+          <span className="sidebar-nav-icon" aria-hidden="true"><UiIcon name="settings" /></span>
           <span className="sidebar-nav-label">Settings</span>
         </button>
         <button
@@ -143,7 +145,7 @@ export function Sidebar({ project, health, hasActiveRun }: SidebarProps): JSX.El
           aria-label="Back to Projects"
           title={isCollapsed ? 'Back to Projects' : undefined}
         >
-          <span className="sidebar-nav-icon" aria-hidden="true">{'\u2190'}</span>
+          <span className="sidebar-nav-icon" aria-hidden="true"><UiIcon name="back" /></span>
           <span className="sidebar-nav-label">Back to Projects</span>
         </button>
       </div>

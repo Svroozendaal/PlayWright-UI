@@ -22,6 +22,12 @@ NEXT_AGENT: Developer
 SUMMARY: Documentation and implementation are both complete in the working tree. PW Studio now runs as a local Express server with a browser SPA, REST API, WebSocket push events, plugin loading, OpenAPI output, PWA metadata, and bundled-runtime packaging.
 BLOCKERS: none
 
+## HANDOFF - Developer+Designer - 2026-04-01
+STATUS: COMPLETE
+NEXT_AGENT: none
+SUMMARY: Updated the shared AI workflow plus the base and app-specific Designer agent guidance to encode Carbon Logic rules: environment colours vs functional colours, dark-mode-only accent usage, reusable tokens, dense shell patterns, and shared panel/table primitives. Refreshed the project shell with a fixed header, compact rail, central workspace, and Carbon Logic token overrides in `App.css`, and restyled the dashboard and runs pages to align with the new system. Validation passed with `npm run typecheck` and `npm run build`. A pre-existing server type error in `TestEditorService.ts` was also corrected by replacing an invalid `definitionId` debug reference with `kind`.
+BLOCKERS: none
+
 ## HANDOFF - Developer - 2026-03-28
 STATUS: COMPLETE
 NEXT_AGENT: Developer

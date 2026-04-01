@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type {
   AvailableTestCase,
@@ -28,6 +29,7 @@ import { api } from '../api/client'
 import { useSocketEvent } from '../api/useSocket'
 import { CodeEditor } from './CodeEditor'
 import { ErrorBanner } from './ErrorBanner'
+import { UiIcon } from './UiIcon'
 
 // ---------------------------------------------------------------------------
 // Block error annotation helpers
@@ -162,6 +164,7 @@ export function TestBlockEditor({
   onDebug,
   onRecordMore,
 }: TestBlockEditorProps): JSX.Element {
+  const navigate = useNavigate()
   const [document, setDocument] = useState<TestEditorDocument | null>(null)
   const [savedDocument, setSavedDocument] = useState<TestEditorDocument | null>(null)
   const [codeDraft, setCodeDraft] = useState('')
@@ -476,7 +479,7 @@ export function TestBlockEditor({
   }
 
   if (loading) {
-    return <div className="code-loading">Loading visual editor…</div>
+    return <div className="code-loading">Loading visual editor...</div>
   }
 
   if (!document) {
@@ -514,7 +517,7 @@ export function TestBlockEditor({
             className={`bed-tab ${tab === 'blocks' ? 'active' : ''}`}
             onClick={() => setTab('blocks')}
           >
-            <span className="bed-tab-icon">⊞</span>
+            <span className="bed-tab-icon"><UiIcon name="blocks" /></span>
             Blocks
             {isDirty && tab === 'blocks' && <span className="dirty-dot" />}
           </button>
@@ -522,7 +525,7 @@ export function TestBlockEditor({
             className={`bed-tab ${tab === 'code' ? 'active' : ''}`}
             onClick={() => setTab('code')}
           >
-            <span className="bed-tab-icon">⟨/⟩</span>
+            <span className="bed-tab-icon"><UiIcon name="code" /></span>
             Code
             {(codeDirty || (isDirty && tab === 'code')) && <span className="dirty-dot" />}
           </button>
@@ -531,12 +534,14 @@ export function TestBlockEditor({
         <div className="bed-actions">
           {mode === 'existing' && onRun && (
             <button className="btn btn-primary btn-sm" onClick={onRun}>
-              ▶ Run
+              <UiIcon name="play" />
+              Run
             </button>
           )}
           {mode === 'existing' && onDebug && (
             <button className="btn btn-secondary btn-sm" onClick={onDebug}>
-              ⬡ Debug
+              <UiIcon name="bug" />
+              Debug
             </button>
           )}
           {onRecordMore && (
@@ -545,12 +550,14 @@ export function TestBlockEditor({
               onClick={() => setRecordPanelOpen((o) => !o)}
               disabled={recording}
             >
-              {recording ? '⏺ Recording…' : '⏺ Record…'}
+              <UiIcon name="record" />
+              {recording ? 'Recording...' : 'Record...'}
             </button>
           )}
           {mode === 'existing' && onRunWithOptions && (
             <button className="btn btn-secondary btn-sm" onClick={onRunWithOptions}>
-              Options…
+              <UiIcon name="sliders" />
+              Options...
             </button>
           )}
           {mode === 'create' && onCancelCreate && (
@@ -650,7 +657,7 @@ export function TestBlockEditor({
                       {document.flowInputs.length} defined
                     </span>
                   )}
-                  <span className="bed-flow-inputs-toggle">{flowInputsOpen ? '▲' : '▼'}</span>
+                  <span className="bed-flow-inputs-toggle"><UiIcon name={flowInputsOpen ? 'chevron-up' : 'chevron-down'} /></span>
                 </div>
                 {flowInputsOpen && (
                   <div className="bed-flow-inputs-body">
@@ -689,7 +696,7 @@ export function TestBlockEditor({
                     onDragOver={(e) => { e.preventDefault(); setDropIndex(0) }}
                     onDrop={(e) => { e.preventDefault(); applyDrop(0) }}
                   >
-                    <span className="bed-empty-icon">+</span>
+                    <span className="bed-empty-icon"><UiIcon name="plus" /></span>
                     <span>Drag a block here to add a step</span>
                   </div>
                 ) : (
@@ -744,7 +751,7 @@ export function TestBlockEditor({
                                     deleteBlock(block.id)
                                   }}
                                 >
-                                  ✕
+                                  <UiIcon name="close" />
                                 </button>
                                 <button
                                   className="bed-node-btn expand"
@@ -754,7 +761,7 @@ export function TestBlockEditor({
                                     setSelectedBlockId(isSelected ? null : block.id)
                                   }}
                                 >
-                                  {isSelected ? '▲' : '▼'}
+                                  <UiIcon name={isSelected ? 'chevron-up' : 'chevron-down'} />
                                 </button>
                               </div>
                             </div>
@@ -793,7 +800,7 @@ export function TestBlockEditor({
                                 className="bed-node-error-strip"
                                 title={blockErrors[block.id]}
                               >
-                                <span className="bed-node-error-icon">✕</span>
+                                <span className="bed-node-error-icon"><UiIcon name="close" /></span>
                                 <span className="bed-node-error-text">
                                   {(blockErrors[block.id] ?? '').split('\n')[0]}
                                 </span>
@@ -826,11 +833,21 @@ export function TestBlockEditor({
             {/* Block library */}
             <div className="bed-library">
               <div className="bed-library-header">
-                <span className="bed-library-title">Block Library</span>
+                <div className="bed-library-header-top">
+                  <span className="bed-library-title">Block Library</span>
+                  <button
+                    type="button"
+                    className="bed-library-settings"
+                    title="Open block library selection"
+                    onClick={() => navigate(`/settings/block-library?projectId=${encodeURIComponent(projectId)}`)}
+                  >
+                    <UiIcon name="settings" />
+                  </button>
+                </div>
                 <div className="bed-library-search-wrap">
                   <input
                     className="bed-library-search"
-                    placeholder="Search blocks…"
+                    placeholder="Search blocks..."
                     value={librarySearch}
                     onChange={(e) => setLibrarySearch(e.target.value)}
                   />
@@ -839,7 +856,7 @@ export function TestBlockEditor({
                       className="bed-library-search-clear"
                       onClick={() => setLibrarySearch('')}
                     >
-                      ✕
+                      <UiIcon name="close" />
                     </button>
                   )}
                 </div>
@@ -877,7 +894,7 @@ export function TestBlockEditor({
                             <div className="bed-library-item-text">
                               <div className="bed-library-item-name">{template.name}</div>
                             </div>
-                            <span className="bed-library-item-drag">⠿</span>
+                            <span className="bed-library-item-drag"><UiIcon name="blocks" /></span>
                           </button>
                         )
                       })}
@@ -894,7 +911,7 @@ export function TestBlockEditor({
                 <span className="bed-browser-badge">Chromium</span>
               </div>
               <div className="bed-browser-preview">
-                <span className="bed-browser-preview-icon">🖥</span>
+                <span className="bed-browser-preview-icon"><UiIcon name="grid" /></span>
                 <span>Live preview coming soon</span>
               </div>
             </div>
@@ -912,7 +929,7 @@ export function TestBlockEditor({
               onClick={() => void handleApplyCodeToBlocks()}
               disabled={syncingCode}
             >
-              {syncingCode ? 'Applying…' : 'Apply Code to Blocks'}
+              {syncingCode ? 'Applying...' : 'Apply Code to Blocks'}
             </button>
           </div>
           <div className="code-area">
@@ -973,8 +990,9 @@ function FlowInputsEditor({
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <button className="btn btn-secondary btn-sm" onClick={createInput}>
+      <div className="bed-flow-inputs-actions">
+        <button className="btn btn-secondary btn-xs" onClick={createInput}>
+          <UiIcon name="plus" />
           Add Input
         </button>
       </div>
@@ -1024,7 +1042,7 @@ function FlowInputsEditor({
                 disabled={index === 0}
                 onClick={() => onChange(moveArrayItem(flowInputs, index, index - 1))}
               >
-                ↑
+                <UiIcon name="move-up" />
               </button>
               <button
                 className="btn-icon"
@@ -1032,14 +1050,14 @@ function FlowInputsEditor({
                 disabled={index === flowInputs.length - 1}
                 onClick={() => onChange(moveArrayItem(flowInputs, index, index + 1))}
               >
-                ↓
+                <UiIcon name="move-down" />
               </button>
               <button
                 className="btn-icon"
                 title="Delete"
                 onClick={() => onChange(flowInputs.filter((entry) => entry.id !== input.id))}
               >
-                ✕
+                <UiIcon name="close" />
               </button>
             </div>
           </div>
@@ -1502,7 +1520,7 @@ function SelectorEditor({
             title="Unlink from variable and edit selector directly"
             onClick={unlink}
           >
-            ✕
+            <UiIcon name="close" />
           </button>
         </div>
       </div>
@@ -1703,7 +1721,7 @@ function ConstantsGroupEditor({
               className="btn-icon"
               onClick={() => commit(entries.filter((_, i) => i !== index))}
             >
-              ✕
+              <UiIcon name="close" />
             </button>
           </div>
         ))}
@@ -2044,7 +2062,7 @@ function getFlowInputMappings(value: BlockFieldValue | undefined): FlowInputMapp
       'source' in entry &&
       'value' in entry &&
       typeof entry.targetName === 'string' &&
-      (entry.source === 'flow_input' || entry.source === 'literal') &&
+      (entry.source === 'flow_input' || entry.source === 'literal' || entry.source === 'env_var') &&
       typeof entry.value === 'string'
     )
   })

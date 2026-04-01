@@ -19,6 +19,7 @@ import { ArtifactPolicyEditor } from '../components/ArtifactPolicyEditor'
 import { CodeEditor } from '../components/CodeEditor'
 import { RunDialog } from '../components/RunDialog'
 import { TestBlockEditor } from '../components/TestBlockEditor'
+import { UiIcon } from '../components/UiIcon'
 
 type ContextMenuState = { x: number; y: number; node: ExplorerNode } | null
 type DetailTab = 'code' | 'info'
@@ -608,11 +609,11 @@ export function ExplorerPage(): JSX.Element {
               className="search-input"
             />
             {searchFilter && (
-              <button className="search-clear" onClick={() => setSearchFilter('')}>{'\u2715'}</button>
+              <button className="search-clear" onClick={() => setSearchFilter('')}><UiIcon name="close" /></button>
             )}
           </div>
           <button className="btn-icon" onClick={handleRefresh} disabled={loading} title="Refresh">
-            {'\u21BB'}
+            <UiIcon name="refresh" />
           </button>
         </div>
 
@@ -879,7 +880,7 @@ export function ExplorerPage(): JSX.Element {
           <div className="modal merge-review-dialog">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h3 style={{ margin: 0 }}>Recording complete</h3>
-              <button className="btn-icon" onClick={() => void cancelMerge()}>{'\u2715'}</button>
+              <button className="btn-icon" onClick={() => void cancelMerge()}><UiIcon name="close" /></button>
             </div>
             {mergeReview.newBlocks.length === 0 ? (
               <p style={{ color: 'var(--text-2)', marginBottom: 16 }}>No new steps were recorded.</p>

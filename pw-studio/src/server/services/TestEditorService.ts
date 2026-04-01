@@ -537,7 +537,7 @@ export class TestEditorService {
     if (!firstTest) return null
     const defs = this.getDefinitions(rootPath)
     const recordedDoc = buildDocumentFromParsedTest(firstTest, originalDocument.filePath, 'existing', defs)
-    console.log('[parseRecordedOutput] all blocks:', recordedDoc.blocks.length, recordedDoc.blocks.map(b => b.definitionId))
+    console.log('[parseRecordedOutput] all blocks:', recordedDoc.blocks.length, recordedDoc.blocks.map((block) => block.kind))
     // Return only blocks beyond the original prelude count
     const newBlocks = recordedDoc.blocks.slice(originalDocument.blocks.length)
     console.log('[parseRecordedOutput] newBlocks after slice:', newBlocks.length)

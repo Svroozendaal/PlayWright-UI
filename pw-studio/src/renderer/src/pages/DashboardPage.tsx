@@ -1,20 +1,37 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
-import type { IpcEnvelope, DashboardStats, RunRecord, RunRequest } from '../../../shared/types/ipc'
+import type { DashboardStats, IpcEnvelope, RunRecord } from '../../../shared/types/ipc'
 import { api } from '../api/client'
 import { useSocketEvent } from '../api/useSocket'
 import { useProject } from '../components/ProjectLayout'
 
+/**
+ * Maps run status values to the shared badge styles.
+ *
+ * @param status The persisted run status.
+ * @returns The CSS badge modifier.
+ */
 function statusBadgeClass(status: string): string {
   switch (status) {
     case 'passed': return 'badge-pass'
-    case 'failed': case 'config-error': return 'badge-fail'
-    case 'running': case 'queued': return 'badge-running'
-    default: return 'badge-cancelled'
+    case 'failed':
+    case 'config-error':
+      return 'badge-fail'
+    case 'running':
+    case 'queued':
+      return 'badge-running'
+    default:
+      return 'badge-cancelled'
   }
 }
 
+/**
+ * Formats a compact relative time label for recent activity widgets.
+ *
+ * @param dateStr The run start timestamp.
+ * @returns A short relative label.
+ */
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const mins = Math.floor(diff / 60000)
@@ -34,9 +51,7 @@ export function DashboardPage(): JSX.Element {
 
   useEffect(() => {
     const load = async (): Promise<void> => {
-      const result = await api.invoke<DashboardStats>(IPC.DASHBOARD_GET_STATS, {
-        projectId: project.id,
-      })
+      const result = await api.invoke<DashboardStats>(IPC.DASHBOARD_GET_STATS, { projectId: project.id })
       const envelope = result as IpcEnvelope<DashboardStats>
       if (envelope.payload) {
         setStats(envelope.payload)
@@ -47,9 +62,7 @@ export function DashboardPage(): JSX.Element {
   }, [project.id])
 
   useSocketEvent(IPC.RUNS_STATUS_CHANGED, () => {
-    void api.invoke<DashboardStats>(IPC.DASHBOARD_GET_STATS, {
-      projectId: project.id,
-    }).then((result) => {
+    void api.invoke<DashboardStats>(IPC.DASHBOARD_GET_STATS, { projectId: project.id }).then((result) => {
       const envelope = result as IpcEnvelope<DashboardStats>
       if (envelope.payload) {
         setStats(envelope.payload)
@@ -58,164 +71,144 @@ export function DashboardPage(): JSX.Element {
     })
   })
 
-  const handleRunAll = async (): Promise<void> => {
-    const request: RunRequest = {
-      projectId: project.id,
-      browser: project.defaultBrowser
-        ? { mode: 'single', projectName: project.defaultBrowser }
-        : { mode: 'all' },
-      environment: project.activeEnvironment ?? undefined,
-      headed: false,
-      streamLogs: true,
-    }
-    const result = await api.invoke<string>(IPC.RUNS_START, request)
-    const envelope = result as IpcEnvelope<string>
-    if (envelope.payload) {
-      navigate(`/project/${project.id}/runs/${envelope.payload}`)
-    }
-  }
-
-  // Health issues (only show when there are problems)
-  const healthIssues = health?.items.filter(i => i.status !== 'pass') ?? []
+  const healthIssues = health?.items.filter((item) => item.status !== 'pass') ?? []
+  const recentRuns = stats?.recentRuns ?? []
 
   return (
-    <div className="dashboard">
-      {/* Quick Actions */}
-      <div className="dash-actions">
-        <button className="dash-action-card dash-action-run" onClick={handleRunAll}>
-          <span className="dash-action-icon">{'\u25B6'}</span>
-          <span className="dash-action-label">Run All Tests</span>
-          <span className="dash-action-sub">
-            {project.defaultBrowser ?? 'all browsers'}
-            {project.activeEnvironment ? ` \u00B7 ${project.activeEnvironment}` : ''}
-          </span>
-        </button>
-        <button className="dash-action-card" onClick={() => navigate(`/project/${project.id}/recorder`)}>
-          <span className="dash-action-icon">{'\u23FA'}</span>
-          <span className="dash-action-label">Record Test</span>
-          <span className="dash-action-sub">Open Playwright codegen</span>
-        </button>
-        <button className="dash-action-card" onClick={() => navigate(`/project/${project.id}/explorer`)}>
-          <span className="dash-action-icon">{'\u{1F4C1}'}</span>
-          <span className="dash-action-label">Open Explorer</span>
-          <span className="dash-action-sub">Browse & edit test files</span>
-        </button>
-      </div>
+    <div className="dashboard carbon-page dashboard-workbench">
+      <section className="dashboard-overview-grid">
+        <article className="carbon-panel dashboard-overview-main">
+          <div className="carbon-panel-heading">
+            <div>
+              <span className="carbon-kicker">Project Overview</span>
+              <h2 className="dashboard-title">{project.name}</h2>
+            </div>
+            <span className="carbon-panel-tag">Workspace</span>
+          </div>
 
-      {/* Stats + Recent Runs row */}
-      <div className="dash-grid">
-        {/* Stats */}
-        <div className="dash-stats">
-          <h3 className="dash-section-title">Overview</h3>
-          {loading ? (
-            <div className="dash-stats-grid">
-              {[1, 2, 3, 4].map(i => (
-                <div key={i} className="stat-card">
-                  <div className="skeleton skeleton-number" />
-                  <div className="skeleton skeleton-label" />
+          <div className="dashboard-overview-metrics">
+            <div className="dashboard-overview-metric">
+              <span className="dashboard-overview-label">Pass rate</span>
+              <strong className="dashboard-overview-value dashboard-overview-value-success">
+                {stats?.passRate !== null && stats?.passRate !== undefined ? `${stats.passRate}%` : '--'}
+              </strong>
+            </div>
+            <div className="dashboard-overview-metric">
+              <span className="dashboard-overview-label">Test files</span>
+              <strong className="dashboard-overview-value">{stats?.totalFiles ?? '--'}</strong>
+            </div>
+            <div className="dashboard-overview-metric">
+              <span className="dashboard-overview-label">Cases</span>
+              <strong className="dashboard-overview-value">{stats?.totalTests ?? '--'}</strong>
+            </div>
+            <div className="dashboard-overview-metric">
+              <span className="dashboard-overview-label">Flaky</span>
+              <strong className="dashboard-overview-value dashboard-overview-value-warn">{stats?.flakyCount ?? '--'}</strong>
+            </div>
+          </div>
+
+          <div className="dashboard-overview-meta">
+            <span>{project.activeEnvironment ?? 'local runtime'}</span>
+            <span>{project.defaultBrowser ?? 'all browsers'}</span>
+            <span>{project.rootPath}</span>
+          </div>
+        </article>
+
+        <article className="carbon-panel dashboard-overview-side">
+          <div className="carbon-panel-heading">
+            <h3 className="dash-section-title">System Health</h3>
+            <span className="carbon-panel-tag">{health?.overallStatus ?? 'Loading'}</span>
+          </div>
+
+          {healthIssues.length > 0 ? (
+            <div className="dashboard-health-list">
+              {healthIssues.slice(0, 4).map((item, index) => (
+                <div key={index} className={`dashboard-health-item status-${item.status}`}>
+                  <span className="dashboard-health-name">{item.check}</span>
+                  <span className="dashboard-health-message">{item.message}</span>
                 </div>
               ))}
             </div>
-          ) : stats ? (
-            <div className="dash-stats-grid">
-              <div className="stat-card">
-                <span className="stat-number">{stats.totalFiles}</span>
-                <span className="stat-label">Test Files</span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-number">{stats.totalTests}</span>
-                <span className="stat-label">Test Cases</span>
-              </div>
-              <div className="stat-card">
-                <span className={`stat-number ${stats.passRate !== null ? (stats.passRate >= 80 ? 'stat-good' : stats.passRate >= 50 ? 'stat-warn' : 'stat-bad') : ''}`}>
-                  {stats.passRate !== null ? `${stats.passRate}%` : '\u2014'}
-                </span>
-                <span className="stat-label">Pass Rate</span>
-              </div>
-              <div className="stat-card stat-card-clickable" onClick={() => navigate(`/project/${project.id}/flaky`)}>
-                <span className={`stat-number ${stats.flakyCount > 0 ? 'stat-warn' : 'stat-good'}`}>
-                  {stats.flakyCount}
-                </span>
-                <span className="stat-label">Flaky Tests</span>
-              </div>
-            </div>
-          ) : null}
-        </div>
+          ) : (
+            <div className="dashboard-health-ok">All health checks passed</div>
+          )}
+        </article>
+      </section>
 
-        {/* Recent Runs */}
-        <div className="dash-recent">
-          <div className="dash-section-header">
+      <section className="dashboard-widget-grid">
+        <article className="carbon-panel dashboard-widget dashboard-widget-recent">
+          <div className="carbon-panel-heading">
             <h3 className="dash-section-title">Recent Runs</h3>
             <button className="btn-ghost btn-sm" onClick={() => navigate(`/project/${project.id}/runs`)}>
-              View all {'\u2192'}
+              Open Registry
             </button>
           </div>
+
           {loading ? (
             <div className="dash-recent-list">
-              {[1, 2, 3].map(i => (
+              {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="skeleton skeleton-row" />
               ))}
             </div>
-          ) : stats && stats.recentRuns.length > 0 ? (
+          ) : recentRuns.length > 0 ? (
             <div className="dash-recent-list">
-              {stats.recentRuns.map((run: RunRecord) => (
+              {recentRuns.slice(0, 6).map((run: RunRecord) => (
                 <button
                   key={run.id}
                   className="dash-run-row"
                   onClick={() => navigate(`/project/${project.id}/runs/${run.id}`)}
                 >
-                  <span className={`run-badge ${statusBadgeClass(run.status)}`}>
-                    {run.status}
-                  </span>
-                  <span className="dash-run-target">
-                    {run.target ?? run.targetPath ?? 'All tests'}
-                  </span>
+                  <span className={`run-badge ${statusBadgeClass(run.status)}`}>{run.status}</span>
+                  <span className="dash-run-target">{run.target ?? run.targetPath ?? 'All tests'}</span>
                   <span className="dash-run-meta">{timeAgo(run.startedAt)}</span>
                 </button>
               ))}
             </div>
           ) : (
             <div className="dash-empty">
-              <p>No runs yet.</p>
-              <button className="btn btn-primary btn-sm" onClick={handleRunAll}>
-                Run your first test
-              </button>
+              <p>No runs recorded yet.</p>
             </div>
           )}
-        </div>
-      </div>
+        </article>
 
-      {/* Health — compact, only shows issues */}
-      {healthIssues.length > 0 ? (
-        <div className="dash-health-issues">
-          <h3 className="dash-section-title">Health Issues</h3>
-          {healthIssues.map((item, i) => (
-            <div key={i} className={`dash-health-item dash-health-${item.status}`}>
-              <span className="dash-health-icon">
-                {item.status === 'error' ? '\u2717' : '\u26A0'}
-              </span>
-              <div className="dash-health-info">
-                <span className="dash-health-name">{item.check}</span>
-                <span className="dash-health-msg">{item.message}</span>
-                {item.actionHint && (
-                  <span className="dash-health-hint">{item.actionHint}</span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : health ? (
-        <div className="dash-health-ok">
-          {'\u2713'} All health checks passed
-        </div>
-      ) : null}
+        <article className="carbon-panel dashboard-widget">
+          <div className="carbon-panel-heading">
+            <h3 className="dash-section-title">Coverage Slot</h3>
+            <span className="carbon-panel-tag">Reserved</span>
+          </div>
+          <div className="dashboard-placeholder-grid">
+            {Array.from({ length: 24 }).map((_, index) => (
+              <span key={index} className={`dashboard-placeholder-cell ${index % 7 === 0 ? 'is-muted' : ''}`} />
+            ))}
+          </div>
+          <p className="dashboard-widget-note">Reserved space for suite, coverage, or artifact widgets.</p>
+        </article>
 
-      {/* Project info */}
-      <div className="dash-project-info">
-        <span>Path: {project.rootPath}</span>
-        <span>Source: {project.source}</span>
-        <span>Created: {new Date(project.createdAt).toLocaleDateString()}</span>
-      </div>
+        <article className="carbon-panel dashboard-widget">
+          <div className="carbon-panel-heading">
+            <h3 className="dash-section-title">Workspace Modules</h3>
+            <span className="carbon-panel-tag">Expandable</span>
+          </div>
+          <div className="dashboard-module-list">
+            <button type="button" className="dashboard-module-row" onClick={() => navigate(`/project/${project.id}/explorer`)}>
+              <span>Explorer</span>
+              <span>Files and editor</span>
+            </button>
+            <button type="button" className="dashboard-module-row" onClick={() => navigate(`/project/${project.id}/suites`)}>
+              <span>Suites</span>
+              <span>Execution groups</span>
+            </button>
+            <button type="button" className="dashboard-module-row" onClick={() => navigate(`/project/${project.id}/flaky`)}>
+              <span>Flaky Tests</span>
+              <span>Instability tracking</span>
+            </button>
+            <button type="button" className="dashboard-module-row" onClick={() => navigate(`/project/${project.id}/settings`)}>
+              <span>Settings</span>
+              <span>Runtime configuration</span>
+            </button>
+          </div>
+        </article>
+      </section>
     </div>
   )
 }

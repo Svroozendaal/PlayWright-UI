@@ -5,6 +5,12 @@ import type { IpcEnvelope, RunRecord, RunStatus } from '../../../shared/types/ip
 import { api } from '../api/client'
 import { useSocketEvent } from '../api/useSocket'
 
+/**
+ * Resolves the shared badge label and style for a run status.
+ *
+ * @param status The run status from persisted history.
+ * @returns The label and CSS class pair used by the runs table.
+ */
 function statusBadge(status: RunStatus): { label: string; className: string } {
   switch (status) {
     case 'passed': return { label: 'Passed', className: 'badge-pass' }
@@ -14,6 +20,22 @@ function statusBadge(status: RunStatus): { label: string; className: string } {
     case 'cancelled': return { label: 'Cancelled', className: 'badge-cancelled' }
     case 'config-error': return { label: 'Config Error', className: 'badge-fail' }
   }
+}
+
+/**
+ * Builds a compact duration label for a completed run.
+ *
+ * @param run The run record to inspect.
+ * @returns A human-readable duration or placeholder.
+ */
+function formatDuration(run: RunRecord): string {
+  if (!run.finishedAt || !run.startedAt) {
+    return '--'
+  }
+  const seconds = Math.round((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
+  const mins = Math.floor(seconds / 60)
+  const remaining = seconds % 60
+  return mins > 0 ? `${mins}m ${remaining}s` : `${remaining}s`
 }
 
 export function RunsPage(): JSX.Element {
@@ -41,8 +63,14 @@ export function RunsPage(): JSX.Element {
     void fetchRuns()
   })
 
-  const filtered = filter === 'all' ? runs : runs.filter((r) => r.status === filter)
+  const filtered = filter === 'all' ? runs : runs.filter((run) => run.status === filter)
 
+  /**
+   * Toggles compare-mode selection while capping the selection at two runs.
+   *
+   * @param runId The run identifier to add or remove.
+   * @returns Nothing.
+   */
   const toggleSelect = (runId: string): void => {
     const next = new Set(selected)
     if (next.has(runId)) {
@@ -53,6 +81,11 @@ export function RunsPage(): JSX.Element {
     setSelected(next)
   }
 
+  /**
+   * Opens the compare screen when exactly two runs are selected.
+   *
+   * @returns Nothing.
+   */
   const handleCompare = (): void => {
     const ids = Array.from(selected)
     if (ids.length === 2) {
@@ -60,15 +93,24 @@ export function RunsPage(): JSX.Element {
     }
   }
 
+  /**
+   * Leaves compare mode and clears any pending selection.
+   *
+   * @returns Nothing.
+   */
   const exitCompareMode = (): void => {
     setCompareMode(false)
     setSelected(new Set())
   }
 
   return (
-    <div className="page-inner">
-      <div className="page-header">
-        <h2>Runs</h2>
+    <div className="page-inner carbon-page">
+      <section className="carbon-hero carbon-hero-compact">
+        <div className="carbon-hero-copy">
+          <span className="carbon-kicker">Execution / Run Registry</span>
+          <h2>Runs</h2>
+          <p>Inspect history, isolate failures, and compare the last two relevant executions.</p>
+        </div>
         <div className="page-header-actions">
           {compareMode ? (
             <>
@@ -83,60 +125,68 @@ export function RunsPage(): JSX.Element {
             )
           )}
         </div>
-      </div>
+      </section>
 
-      <div className="actions" style={{ marginBottom: 16 }}>
-        <select value={filter} onChange={(e) => setFilter(e.target.value)} className="form-select">
+      <section className="carbon-toolbar">
+        <select value={filter} onChange={(event) => setFilter(event.target.value)} className="form-select">
           <option value="all">All</option>
           <option value="passed">Passed</option>
           <option value="failed">Failed</option>
           <option value="cancelled">Cancelled</option>
           <option value="config-error">Config Error</option>
         </select>
-      </div>
+        <span className="carbon-toolbar-meta">{filtered.length} visible</span>
+      </section>
 
       {filtered.length === 0 ? (
-        <div className="empty-state">
+        <div className="empty-state carbon-panel">
           <h3>No runs yet</h3>
-          <p>Run tests from the Explorer or Dashboard to see results here.</p>
+          <p>Run tests from the dashboard or explorer to populate the registry.</p>
         </div>
       ) : (
-        <div className="run-list">
-          {filtered.map((run) => {
-            const badge = statusBadge(run.status)
-            const duration = run.finishedAt && run.startedAt
-              ? Math.round((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
-              : null
-            const isSelected = selected.has(run.id)
+        <section className="carbon-panel carbon-table-panel">
+          <div className="carbon-table-header">
+            <span>Run ID</span>
+            <span>Status</span>
+            <span>Target</span>
+            <span>Environment</span>
+            <span>Started</span>
+            <span>Duration</span>
+          </div>
+          <div className="run-list carbon-run-list">
+            {filtered.map((run) => {
+              const badge = statusBadge(run.status)
+              const isSelected = selected.has(run.id)
 
-            return (
-              <div
-                key={run.id}
-                className={`run-card ${isSelected ? 'run-card-selected' : ''}`}
-                onClick={() => {
-                  if (compareMode) {
-                    toggleSelect(run.id)
-                  } else {
-                    navigate(`/project/${projectId}/runs/${run.id}`)
-                  }
-                }}
-              >
-                {compareMode && (
-                  <input type="checkbox" checked={isSelected} readOnly style={{ marginRight: 8, width: 16, height: 16 }} />
-                )}
-                <div className="run-card-info">
+              return (
+                <button
+                  key={run.id}
+                  type="button"
+                  className={`run-card carbon-run-row ${isSelected ? 'run-card-selected' : ''}`}
+                  onClick={() => {
+                    if (compareMode) {
+                      toggleSelect(run.id)
+                    } else {
+                      navigate(`/project/${projectId}/runs/${run.id}`)
+                    }
+                  }}
+                >
+                  <span className="carbon-run-id">
+                    {compareMode && (
+                      <input type="checkbox" checked={isSelected} readOnly />
+                    )}
+                    {run.id.slice(0, 8)}
+                  </span>
                   <span className={`run-badge ${badge.className}`}>{badge.label}</span>
                   <span className="run-target">{run.targetPath ?? run.target ?? 'All tests'}</span>
-                </div>
-                <div className="run-card-meta">
-                  {run.environment && <span className="run-env-tag">{run.environment}</span>}
-                  <span>{new Date(run.startedAt).toLocaleString()}</span>
-                  {duration !== null && <span>{duration}s</span>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
+                  <span className="run-env-tag">{run.environment ?? '--'}</span>
+                  <span className="carbon-run-date">{new Date(run.startedAt).toLocaleString()}</span>
+                  <span className="carbon-run-duration">{formatDuration(run)}</span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
       )}
     </div>
   )
