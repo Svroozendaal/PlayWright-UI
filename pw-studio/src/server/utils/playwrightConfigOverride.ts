@@ -23,7 +23,8 @@ export function createRunConfigOverride(
   rootPath: string,
   runId: string,
   runDir: string,
-  reportDir: string
+  reportDir: string,
+  options?: { testDir?: string }
 ): string | null {
   const configPath = findPlaywrightConfigFile(rootPath)
   if (!configPath) {
@@ -33,6 +34,7 @@ export function createRunConfigOverride(
   const overrideDir = rootPath
   const overridePath = path.join(overrideDir, `.pw-studio.${runId}.config.ts`)
   const importPath = toImportSpecifier(overrideDir, configPath)
+  const testDirLine = options?.testDir ? `  testDir: ${JSON.stringify(options.testDir)},\n` : ''
 
   fs.writeFileSync(
     overridePath,
@@ -43,7 +45,7 @@ const baseConfig = originalConfig ?? {}
 export default {
   ...baseConfig,
   outputDir: ${JSON.stringify(runDir)},
-  reporter: [
+${testDirLine}  reporter: [
     ['line'],
     ['json', { outputFile: ${JSON.stringify(path.join(runDir, 'results.json'))} }],
     ['html', { open: 'never', outputFolder: ${JSON.stringify(reportDir)} }],

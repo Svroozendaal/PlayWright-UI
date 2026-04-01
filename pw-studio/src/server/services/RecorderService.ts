@@ -49,23 +49,37 @@ export class RecorderService {
       throw new Error(`Playwright binary not found at: ${binary}`)
     }
 
-    const outputDir = path.dirname(options.outputPath)
+    // Resolve outputPath to absolute so fs calls and spawn args agree
+    const absoluteOutputPath = path.isAbsolute(options.outputPath)
+      ? options.outputPath
+      : path.join(rootPath, options.outputPath)
+    const resolvedOptions: CodegenOptions = { ...options, outputPath: absoluteOutputPath }
+
+    const outputDir = path.dirname(absoluteOutputPath)
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true })
     }
 
+    if (resolvedOptions.preludeCode) {
+      fs.writeFileSync(absoluteOutputPath, resolvedOptions.preludeCode, 'utf8')
+    }
+
     const args: string[] = ['codegen']
 
-    if (options.browser) {
-      args.push(`--browser=${options.browser}`)
+    if (resolvedOptions.browser) {
+      args.push(`--browser=${resolvedOptions.browser}`)
     }
 
-    if (options.outputPath) {
-      args.push('-o', options.outputPath)
+    if (absoluteOutputPath) {
+      args.push('-o', absoluteOutputPath)
     }
 
-    if (options.startUrl) {
-      args.push(options.startUrl)
+    if (resolvedOptions.storageState) {
+      args.push(`--load-storage=${resolvedOptions.storageState}`)
+    }
+
+    if (resolvedOptions.startUrl) {
+      args.push(resolvedOptions.startUrl)
     }
 
     const cleanEnv = { ...process.env }
@@ -87,7 +101,7 @@ export class RecorderService {
 
     this.activeProcess = proc
     this.activeRootPath = rootPath
-    this.activeOptions = options
+    this.activeOptions = resolvedOptions
     this.lastResult = null
     this.status = 'running'
     this.lastError = null

@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { API_ROUTES } from '../../shared/types/ipc'
 import type { RouteDefinition } from '../middleware/envelope'
+import type { RegisteredProject } from '../../shared/types/ipc'
+import type { EnvironmentService } from '../services/EnvironmentService'
 import { getProjectOrThrow } from './common'
 
 const testCaseRefSchema = z.object({
@@ -12,6 +14,7 @@ const selectorSpecSchema = z.object({
   strategy: z.enum(['role', 'text', 'label', 'test_id', 'css', 'placeholder']),
   value: z.string(),
   name: z.string().optional(),
+  varName: z.string().optional(),
 })
 
 const testReferenceSchema = z.object({
@@ -22,7 +25,7 @@ const testReferenceSchema = z.object({
 
 const flowInputMappingSchema = z.object({
   targetName: z.string(),
-  source: z.enum(['flow_input', 'literal']),
+  source: z.enum(['flow_input', 'literal', 'env_var']),
   value: z.string(),
 })
 
@@ -65,6 +68,7 @@ const editorDocumentSchema = z.object({
   testTitle: z.string(),
   flowInputs: z.array(flowInputSchema),
   constants: z.array(z.string()).default([]),
+  locatorConstants: z.array(z.string()).default([]),
   blocks: z.array(testBlockSchema),
   code: z.string(),
   warnings: z.array(z.string()),
@@ -110,6 +114,14 @@ const saveEditorBodySchema = z.object({
 const libraryQuerySchema = z.object({
   projectId: z.string().min(1).optional(),
 })
+
+function getActiveEnvVarNames(project: RegisteredProject, environmentService: EnvironmentService): string[] {
+  if (!project.activeEnvironment) return []
+  const envs = environmentService.listEnvironments(project.id, project.rootPath)
+  const env = envs.find((e) => e.name === project.activeEnvironment)
+  if (!env) return []
+  return ['baseURL', ...Object.keys(env.variables), ...Object.keys(env.secretRefs)]
+}
 
 export const testEditorRoutes: RouteDefinition[] = [
   {
@@ -180,6 +192,7 @@ export const testEditorRoutes: RouteDefinition[] = [
       return {
         ...services.testEditor.getLibraryTemplates(project.rootPath),
         availableTestCases: services.projectIndex.listAvailableTestCases(projectId, project.rootPath),
+        activeEnvVarNames: getActiveEnvVarNames(project, services.environment),
       }
     },
   },

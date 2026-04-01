@@ -9,6 +9,8 @@ const recorderStartBodySchema = z.object({
   startUrl: z.string().optional(),
   outputPath: z.string().min(1),
   browser: z.string().optional(),
+  preludeCode: z.string().optional(),
+  storageState: z.string().optional(),
 })
 
 const recorderSaveBodySchema = z.object({

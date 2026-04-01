@@ -47,6 +47,10 @@ export const API_ROUTES = {
   RUNS_RERUN_FAILED: '/runs/:runId/rerun-failed',
   RUNS_GET_TEST_RESULTS: '/runs/:runId/results',
   RUNS_COMPARE: '/runs/compare',
+  RUNS_GET_RECORDED_SNIPPET: '/runs/:runId/recorded-snippet',
+  RUNS_GET_CAPTURE_META: '/runs/:runId/capture-meta',
+  RUNS_MERGE_RECORDED: '/runs/:runId/merge-recorded',
+  RUNS_START_PAUSE_RECORD: '/projects/:id/runs/pause-record',
 
   ARTIFACTS_LIST_BY_RUN: '/runs/:runId/artifacts',
   ARTIFACTS_OPEN: '/artifacts/open',
@@ -75,6 +79,12 @@ export const API_ROUTES = {
   FLAKY_TEST_HISTORY: '/projects/:id/flaky/:testTitle/history',
 
   DASHBOARD_GET_STATS: '/projects/:id/dashboard',
+
+  SUITES_LIST: '/projects/:id/suites',
+  SUITES_CREATE: '/projects/:id/suites',
+  SUITES_UPDATE: '/projects/:id/suites/:suiteId',
+  SUITES_DELETE: '/projects/:id/suites/:suiteId',
+  SUITES_RUN: '/projects/:id/suites/:suiteId/run',
 
   SETTINGS_GET_APP_INFO: '/settings/app-info',
   SETTINGS_GET: '/settings/:key',
@@ -136,6 +146,10 @@ export const IPC = {
   RUNS_RERUN_FAILED: 'runs:rerunFailed',
   RUNS_GET_TEST_RESULTS: 'runs:getTestResults',
   RUNS_COMPARE: 'runs:compare',
+  RUNS_GET_RECORDED_SNIPPET: 'runs:getRecordedSnippet',
+  RUNS_GET_CAPTURE_META: 'runs:getCaptureMeta',
+  RUNS_MERGE_RECORDED: 'runs:mergeRecorded',
+  RUNS_START_PAUSE_RECORD: 'runs:startPauseRecord',
   RUNS_LOG_EVENT: WS_EVENTS.RUNS_LOG_EVENT,
   RUNS_STATUS_CHANGED: WS_EVENTS.RUNS_STATUS_CHANGED,
 
@@ -171,6 +185,12 @@ export const IPC = {
   FILE_CREATE: 'file:create',
 
   DASHBOARD_GET_STATS: 'dashboard:getStats',
+
+  SUITES_LIST: 'suites:list',
+  SUITES_CREATE: 'suites:create',
+  SUITES_UPDATE: 'suites:update',
+  SUITES_DELETE: 'suites:delete',
+  SUITES_RUN: 'suites:run',
 } as const
 
 export const ERROR_CODES = {
@@ -263,6 +283,8 @@ export type RunRequest = {
   extraEnv?: Record<string, string>
   streamLogs?: boolean
   flowInputOverrides?: Record<string, string>
+  testDirOverride?: string
+  envVarsPayload?: Record<string, string>
 }
 
 export type RunRecord = {
@@ -322,6 +344,8 @@ export type CodegenOptions = {
   startUrl?: string
   outputPath: string
   browser?: string
+  preludeCode?: string
+  storageState?: string
 }
 
 export type CodegenExtractionKind = 'selector' | 'value' | 'url'
@@ -447,7 +471,7 @@ export type FlowInputDefinition = {
 
 export type FlowInputMapping = {
   targetName: string
-  source: 'flow_input' | 'literal'
+  source: 'flow_input' | 'literal' | 'env_var'
   value: string
 }
 
@@ -464,11 +488,14 @@ export type SelectorSpec = {
   strategy: SelectorStrategy
   value: string
   name?: string
+  varName?: string
 }
 
 export type BlockDisplayValueSource =
   | 'url'
   | 'value'
+  | 'title'
+  | 'text'
   | 'definitions'
   | 'selector.value'
   | 'selector.name'
@@ -553,6 +580,7 @@ export type TestEditorLibraryPayload = {
   templates: ManagedBlockTemplate[]
   availableTemplateIds: string[]
   availableTestCases: AvailableTestCase[]
+  activeEnvVarNames?: string[]
 }
 
 export type BlockLibraryProjectState = {
@@ -630,6 +658,7 @@ export type TestEditorDocument = {
   testTitle: string
   flowInputs: FlowInputDefinition[]
   constants: string[]
+  locatorConstants: string[]
   blocks: TestBlock[]
   code: string
   warnings: string[]
@@ -654,6 +683,35 @@ export type DashboardStats = {
 
 export type TestStatusMap = Record<string, 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted'>
 
+export type SuiteEntry = {
+  id: string
+  /** Relative path to the spec file within the project root. */
+  filePath: string
+  /** When set, only this specific test title is targeted. Null means the whole file. */
+  testTitle: string | null
+  /** Individual test titles within the file that are disabled (skipped via grep-invert). Only used when testTitle is null. */
+  disabledTestTitles: string[]
+  enabled: boolean
+  flowInputOverrides: Record<string, string>
+  browser: BrowserSelection
+  environment: string | null
+}
+
+export type Suite = {
+  id: string
+  name: string
+  entries: SuiteEntry[]
+}
+
+export type SuiteFile = {
+  suites: Suite[]
+}
+
+export type SuiteRunResult = {
+  suiteId: string
+  runIds: string[]
+}
+
 export type DirectoryEntry = {
   name: string
   type: 'directory' | 'file'
@@ -664,4 +722,14 @@ export type DirectoryBrowseResult = {
   currentPath: string
   parentPath: string | null
   entries: DirectoryEntry[]
+}
+
+export type PauseRecordRequest = {
+  projectId: string
+  document: TestEditorDocument
+  browser?: string
+}
+
+export type RecordedSnippetResult = {
+  snippet: string | null
 }

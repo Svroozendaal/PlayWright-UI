@@ -45,14 +45,20 @@ export type ServerBlockContext = {
   flowInputAccessor?: string
   flowInputs?: FlowInputDefinition[]
   constants?: string[]
+  availableEnvVarNames?: string[]
 }
 
 export type ServerBlockDefinition = BlockDefinition & {
   parseLeadingStatements?: (
     statements: readonly ts.Statement[],
     sourceFile: ts.SourceFile
-  ) => { block: TestBlock; consumedCount: number } | null
-  parseStatement?: (statement: ts.Statement, title: string | null, constants?: string[]) => TestBlock | null
+  ) => { block: TestBlock; consumedCount: number; locatorConstantNodes?: Map<string, ts.Node> } | null
+  parseStatement?: (
+    statement: ts.Statement,
+    title: string | null,
+    constants?: string[],
+    locatorConstantNodes?: Map<string, ts.Node>
+  ) => TestBlock | null
   render: (block: TestBlock, context: ServerBlockContext) => string
   validate?: (block: TestBlock, context: ServerBlockContext) => string[]
 }

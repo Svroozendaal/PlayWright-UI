@@ -38,6 +38,7 @@ export function Sidebar({ project, health, hasActiveRun }: SidebarProps): JSX.El
   const navItems: NavItem[] = [
     { label: 'Dashboard', icon: '\u2302', path: base },
     { label: 'Explorer', icon: '\u{1F4C1}', path: `${base}/explorer` },
+    { label: 'Suites', icon: '\u25A4', path: `${base}/suites` },
     { label: 'Runs', icon: '\u25B6', path: `${base}/runs` },
     { label: 'Recorder', icon: '\u23FA', path: `${base}/recorder` },
     { label: 'Environments', icon: '\u{1F310}', path: `${base}/environments` },

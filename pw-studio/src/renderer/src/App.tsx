@@ -10,6 +10,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { EnvironmentsPage } from './pages/EnvironmentsPage'
 import { RecorderPage } from './pages/RecorderPage'
 import { FlakyTestsPage } from './pages/FlakyTestsPage'
+import { SuitesPage } from './pages/SuitesPage'
 import { BlockLibraryPage } from './pages/BlockLibraryPage'
 import { PluginManagerPage } from './pages/PluginManagerPage'
 import { ProjectIntegrationsPage } from './pages/ProjectIntegrationsPage'
@@ -25,6 +26,7 @@ export function App(): JSX.Element {
         <Route path="/project/:id" element={<ProjectLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="explorer" element={<ExplorerPage />} />
+          <Route path="suites" element={<SuitesPage />} />
           <Route path="runs" element={<RunsPage />} />
           <Route path="runs/compare" element={<RunComparisonPage />} />
           <Route path="runs/:runId" element={<RunDetailPage />} />

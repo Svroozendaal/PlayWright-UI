@@ -1,5 +1,8 @@
+import fs from 'fs'
+import path from 'path'
+import crypto from 'crypto'
 import { z } from 'zod'
-import { API_ROUTES, ERROR_CODES, type RunRequest } from '../../shared/types/ipc'
+import { API_ROUTES, ERROR_CODES, type RunRequest, type TestEditorDocument } from '../../shared/types/ipc'
 import type { RouteDefinition } from '../middleware/envelope'
 import { ApiRouteError } from '../middleware/envelope'
 import { getProjectOrThrow, idParamSchema, runIdParamSchema, throwRunNotFound } from './common'
@@ -53,6 +56,10 @@ export const runRoutes: RouteDefinition[] = [
           )
           request.baseURLOverride = resolved.baseURL || request.baseURLOverride
           request.extraEnv = { ...request.extraEnv, ...resolved.env }
+          request.envVarsPayload = {
+            baseURL: resolved.baseURL ?? '',
+            ...resolved.env,
+          }
         } catch (error) {
           if (error instanceof EnvironmentNotFoundError) {
             throw new ApiRouteError(ERROR_CODES.ENVIRONMENT_NOT_FOUND, error.message, 404)
@@ -158,5 +165,171 @@ export const runRoutes: RouteDefinition[] = [
     operationId: 'getRunResults',
     schemas: { params: runIdParamSchema },
     handler: ({ services, params }) => services.run.getTestResults((params as { runId: string }).runId),
+  },
+  {
+    method: 'post',
+    path: API_ROUTES.RUNS_GET_CAPTURE_META,
+    tags: ['Runs'],
+    summary: 'Read state-capture metadata and clean up temp files after a pause-record run',
+    operationId: 'getCaptureMeta',
+    schemas: {
+      params: runIdParamSchema,
+      body: z.object({
+        tempFile: z.string().min(1),
+        storageStatePath: z.string().min(1),
+      }),
+    },
+    handler: ({ services, params, body }) => {
+      const { tempFile, storageStatePath } = body as { tempFile: string; storageStatePath: string }
+      return services.run.getCaptureMeta(
+        (params as { runId: string }).runId,
+        tempFile,
+        storageStatePath
+      )
+    },
+  },
+  {
+    method: 'post',
+    path: API_ROUTES.RUNS_MERGE_RECORDED,
+    tags: ['Runs'],
+    summary: 'Parse or merge newly recorded blocks from a codegen output file into the original test',
+    operationId: 'mergeRecorded',
+    schemas: {
+      params: runIdParamSchema,
+      body: z.object({
+        outputPath: z.string().min(1),
+        document: z.object({}).passthrough(),
+        projectId: z.string().min(1),
+        mode: z.enum(['dry', 'append', 'replace', 'discard']).optional(),
+      }),
+    },
+    handler: async ({ services, body }) => {
+      const { outputPath, document, projectId, mode = 'append' } = body as {
+        outputPath: string
+        document: TestEditorDocument
+        projectId: string
+        mode?: 'dry' | 'append' | 'replace' | 'discard'
+      }
+      const project = getProjectOrThrow(services, projectId)
+      // Resolve outputPath relative to project root if it's not absolute
+      const resolvedOutputPath = path.isAbsolute(outputPath)
+        ? outputPath
+        : path.join(project.rootPath, outputPath)
+      console.log('[RUNS_MERGE_RECORDED] mode:', mode, 'resolvedOutputPath:', resolvedOutputPath)
+
+      if (mode === 'discard') {
+        try { if (fs.existsSync(resolvedOutputPath)) fs.unlinkSync(resolvedOutputPath) } catch { /* ignore */ }
+        return { merged: false }
+      }
+
+      if (mode === 'dry') {
+        try {
+          const result = services.testEditor.parseRecordedOutput(project.rootPath, resolvedOutputPath, document)
+          return { newBlocks: result?.newBlocks ?? [] }
+        } catch (err) {
+          console.error('[RUNS_MERGE_RECORDED dry] error:', err)
+          return { newBlocks: [], error: String(err) }
+        }
+      }
+
+      // append or replace: compute final document
+      let finalDoc: TestEditorDocument | null
+      if (mode === 'replace') {
+        finalDoc = services.testEditor.parseRecordedOutputFull(project.rootPath, resolvedOutputPath, document)
+      } else {
+        finalDoc = services.testEditor.mergeRecordedOutput(project.rootPath, resolvedOutputPath, document)
+      }
+
+      // Clean up the temp codegen output file regardless
+      try { if (fs.existsSync(resolvedOutputPath)) fs.unlinkSync(resolvedOutputPath) } catch { /* ignore */ }
+
+      if (!finalDoc) return { merged: false }
+
+      services.testEditor.save(project.rootPath, finalDoc)
+      return { merged: true }
+    },
+  },
+  {
+    method: 'get',
+    path: API_ROUTES.RUNS_GET_RECORDED_SNIPPET,
+    tags: ['Runs'],
+    summary: 'Get the Playwright-generated snippet from a PWDEBUG=1 pause-record run',
+    operationId: 'getRecordedSnippet',
+    schemas: { params: runIdParamSchema },
+    handler: ({ services, params }) => ({
+      snippet: services.run.getRecordedSnippet((params as { runId: string }).runId),
+    }),
+  },
+  {
+    method: 'post',
+    path: API_ROUTES.RUNS_START_PAUSE_RECORD,
+    tags: ['Runs'],
+    summary: 'Run existing test steps headlessly, capture browser state, then launch codegen from that state',
+    operationId: 'startPauseRecordRun',
+    schemas: {
+      params: idParamSchema,
+      body: z.object({
+        document: z.object({}).passthrough(),
+        browser: z.string().optional(),
+        outputPath: z.string().min(1),
+      }),
+    },
+    handler: async ({ services, params, body }) => {
+      const project = getProjectOrThrow(services, (params as { id: string }).id)
+      const { document, browser, outputPath } = body as {
+        document: TestEditorDocument
+        browser?: string
+        outputPath: string
+      }
+
+      const runId = crypto.randomUUID()
+      const stateDir = path.join(project.rootPath, '.artifacts', 'pause-record')
+      fs.mkdirSync(stateDir, { recursive: true })
+      const storageStatePath = path.join(stateDir, `${runId}-state.json`)
+
+      const metaPath = storageStatePath.replace('.json', '-meta.json')
+
+      // Render existing blocks and append storage-state + URL capture inline at the end of the test body
+      const snippet = services.testEditor.renderSnippet(project.rootPath, document)
+      const lastClose = snippet.lastIndexOf('\n})')
+      const captureLines = [
+        `  await page.context().storageState({ path: ${JSON.stringify(storageStatePath)} })`,
+        `  require('fs').writeFileSync(${JSON.stringify(metaPath)}, JSON.stringify({ url: page.url() }))`,
+      ].join('\n')
+      const captureSnippet =
+        lastClose !== -1
+          ? `${snippet.slice(0, lastClose)}\n${captureLines}${snippet.slice(lastClose)}`
+          : snippet
+
+      const tempFile = path.join(project.rootPath, `.pw-state-capture-${runId}.spec.ts`)
+      const fullSource = `import { test, expect } from '@playwright/test'\n\n${captureSnippet}\n`
+      fs.writeFileSync(tempFile, fullSource, 'utf8')
+
+      const configSummary = services.playwrightConfig.get(project.id, project.rootPath)
+      const firstProject = configSummary.projects[0]
+      const browserSelection: RunRequest['browser'] = firstProject
+        ? { mode: 'single', projectName: firstProject }
+        : { mode: 'all' }
+
+      const request: RunRequest = {
+        projectId: project.id,
+        targetPath: tempFile,
+        browser: browserSelection,
+        headed: false,
+        streamLogs: true,
+        testDirOverride: project.rootPath,
+      }
+
+      try {
+        const startedRunId = await services.run.startRun(request, project.rootPath)
+        return { runId: startedRunId, tempFile, storageStatePath }
+      } catch (error) {
+        try { fs.unlinkSync(tempFile) } catch { /* ignore */ }
+        if (error instanceof ActiveRunError) {
+          throw new ApiRouteError(ERROR_CODES.ACTIVE_RUN_EXISTS, error.message, 409)
+        }
+        throw error
+      }
+    },
   },
 ]

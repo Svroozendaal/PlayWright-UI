@@ -60,7 +60,21 @@
       "Bash(find 'c:\\\\Workspaces\\\\PlayWright UI\\\\pw-studio\\\\src' -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\))",
       "Bash(grep -r \"BlockDefinition\\\\|BlockTemplate\\\\|TestBlock\" 'c:\\\\Workspaces\\\\PlayWright UI\\\\pw-studio\\\\src\\\\shared' --include=*.ts --include=*.tsx)",
       "Bash(grep -n \"case ''flow_mapping''\" \"c:/Workspaces/PlayWright UI/pw-studio/src/renderer/src/components/TestBlockEditor.tsx\")",
-      "Bash(grep -B5 -A20 \"case ''flow_mapping''\" \"c:/Workspaces/PlayWright UI/pw-studio/src/renderer/src/components/TestBlockEditor.tsx\")"
+      "Bash(grep -B5 -A20 \"case ''flow_mapping''\" \"c:/Workspaces/PlayWright UI/pw-studio/src/renderer/src/components/TestBlockEditor.tsx\")",
+      "Bash(find 'c:/Workspaces/PlayWright UI' -iname *project*111* -o -iname *111*)",
+      "Bash(node_modules/.bin/tsc --noEmit --project tsconfig.web.json)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":5173\\\\|:3000\\\\|:4173\")",
+      "Bash(xargs grep:*)",
+      "Bash(node_modules/.bin/tsc --noEmit --project tsconfig.node.json)",
+      "Bash(node_modules/.bin/tsc --noEmit --project tsconfig.server.json)",
+      "Bash(echo \"SERVER_EXIT:$?\")",
+      "Bash(echo \"WEB_EXIT:$?\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3131/api/settings/app-info)",
+      "Bash(echo \"SERVER:$?\")",
+      "Bash(echo \"WEB:$?\")",
+      "Bash(tasklist)",
+      "Bash(node_modules/.bin/playwright.cmd codegen:*)"
     ]
   }
 }

@@ -96,6 +96,7 @@ const persistedDocumentSchema = z.object({
   testTitle: z.string(),
   flowInputs: z.array(flowInputSchema),
   constants: z.array(z.string()).default([]),
+  locatorConstants: z.array(z.string()).default([]),
   blocks: z.array(persistedBlockSchema),
   code: z.string(),
   warnings: z.array(z.string()),
@@ -153,6 +154,7 @@ export class TestEditorService {
       testTitle: 'New visual test',
       flowInputs: [],
       constants: [],
+      locatorConstants: [],
       blocks: [],
       code: '',
       warnings: [],
@@ -501,6 +503,72 @@ export class TestEditorService {
     }
 
     return errors
+  }
+
+  mergeRecordedOutput(
+    rootPath: string,
+    outputPath: string,
+    originalDocument: TestEditorDocument
+  ): TestEditorDocument | null {
+    const result = this.parseRecordedOutput(rootPath, outputPath, originalDocument)
+    if (!result || result.newBlocks.length === 0) return null
+    return { ...originalDocument, blocks: [...originalDocument.blocks, ...result.newBlocks] }
+  }
+
+  // Returns { newBlocks } — all blocks recorded in the output file — without saving or deleting.
+  // The caller decides whether to append or replace.
+  parseRecordedOutput(
+    rootPath: string,
+    outputPath: string,
+    originalDocument: TestEditorDocument
+  ): { newBlocks: TestBlock[] } | null {
+    if (!fs.existsSync(outputPath)) {
+      console.log('[parseRecordedOutput] file not found:', outputPath)
+      return null
+    }
+    const recordedSource = fs.readFileSync(outputPath, 'utf8')
+    console.log('[parseRecordedOutput] source length:', recordedSource.length, '\n', recordedSource.slice(0, 300))
+    const parsed = parseTestSource(recordedSource, outputPath)
+    if (parsed.testCases.length === 0) {
+      console.log('[parseRecordedOutput] no test cases found')
+      return null
+    }
+    const firstTest = parsed.testCases[0]
+    if (!firstTest) return null
+    const defs = this.getDefinitions(rootPath)
+    const recordedDoc = buildDocumentFromParsedTest(firstTest, originalDocument.filePath, 'existing', defs)
+    console.log('[parseRecordedOutput] all blocks:', recordedDoc.blocks.length, recordedDoc.blocks.map(b => b.definitionId))
+    // Return only blocks beyond the original prelude count
+    const newBlocks = recordedDoc.blocks.slice(originalDocument.blocks.length)
+    console.log('[parseRecordedOutput] newBlocks after slice:', newBlocks.length)
+    return { newBlocks }
+  }
+
+  // Returns the full document from the recorded output (for replace mode), without saving
+  parseRecordedOutputFull(
+    rootPath: string,
+    outputPath: string,
+    originalDocument: TestEditorDocument
+  ): TestEditorDocument | null {
+    if (!fs.existsSync(outputPath)) return null
+    const recordedSource = fs.readFileSync(outputPath, 'utf8')
+    const parsed = parseTestSource(recordedSource, outputPath)
+    if (parsed.testCases.length === 0) return null
+    const firstTest = parsed.testCases[0]
+    if (!firstTest) return null
+    const defs = this.getDefinitions(rootPath)
+    const recordedDoc = buildDocumentFromParsedTest(firstTest, originalDocument.filePath, 'existing', defs)
+    // Keep original metadata (title, testCaseRef, filePath) but replace blocks
+    return { ...originalDocument, blocks: recordedDoc.blocks }
+  }
+
+  renderSnippet(rootPath: string, document: TestEditorDocument): string {
+    return renderDocumentCode(document, this.getDefinitions(rootPath), {
+      rootPath,
+      documentFilePath: document.filePath,
+      documentTestCaseRef: document.testCaseRef,
+      constants: document.constants,
+    })
   }
 
   private getDefinitions(rootPath?: string) {

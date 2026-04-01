@@ -20,6 +20,7 @@ import { FileService } from './FileService'
 import { DashboardService } from './DashboardService'
 import { TestEditorService } from './TestEditorService'
 import { BlockLibraryService } from './BlockLibraryService'
+import { SuiteService } from './SuiteService'
 import { PluginProjectService, PluginRuntimeService } from '../plugins/runtime'
 import { registerCorePluginContributions } from '../plugins/core'
 
@@ -46,6 +47,7 @@ export type ServiceContainer = {
   pluginRuntime: PluginRuntimeService
   blockLibrary: BlockLibraryService
   testEditor: TestEditorService
+  suite: SuiteService
 }
 
 export function createServices(
@@ -79,6 +81,7 @@ export function createServices(
   const blockLibrary = new BlockLibraryService(pluginRuntime)
   const recorder = new RecorderService(publish, pluginRuntime)
   const testEditor = new TestEditorService(blockLibrary, pluginRuntime)
+  const suite = new SuiteService()
   run.setFlakyTracking(flakyTracking)
 
   fileWatch.setOnFileEvent(async (event) => {
@@ -114,5 +117,6 @@ export function createServices(
     pluginRuntime,
     blockLibrary,
     testEditor,
+    suite,
   }
 }

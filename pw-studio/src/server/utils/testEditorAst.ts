@@ -32,6 +32,7 @@ export type ParsedTestSource = {
 type BlockExtractionResult = {
   flowInputs: FlowInputDefinition[]
   constants: string[]
+  locatorConstants: string[]
   blocks: TestBlock[]
   warnings: string[]
 }
@@ -47,7 +48,11 @@ const FLOW_DEFAULTS_NAME = '__pwFlowDefaults'
 const FLOW_EXPOSED_NAME = '__pwFlowExposed'
 const FLOW_INPUT_NAME = '__pwFlow'
 const FLOW_ENV_VAR = 'PW_STUDIO_FLOW_INPUTS'
-const PLACEHOLDER_PATTERN = /{{\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}/g
+const ENV_RESOLVER_NAME = '__pwResolveEnvVars'
+const ENV_INPUT_NAME = '__pwEnv'
+const ENV_ENV_VAR = 'PW_STUDIO_ENV_VARS'
+const ENV_TOKEN_PREFIX = 'env.'
+const PLACEHOLDER_PATTERN = /{{\s*(env\.[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)\s*}}/g
 
 export function parseTestSource(code: string, filePath: string): ParsedTestSource {
   const sourceFile = ts.createSourceFile(
@@ -96,6 +101,7 @@ export function buildDocumentFromParsedTest(
     testTitle: parsed.title,
     flowInputs: extraction.flowInputs,
     constants: extraction.constants,
+    locatorConstants: extraction.locatorConstants,
     blocks: extraction.blocks,
     code: parsed.snippet,
     warnings: extraction.warnings,
@@ -157,6 +163,7 @@ export function renderDocumentBody(
   context: ServerBlockContext = {},
   eol = '\n'
 ): string {
+  const envPrelude = hasEnvVarReferences(document.blocks) ? renderEnvPrelude(eol) : ''
   const flowPrelude = renderFlowPrelude(document.flowInputs, eol)
   const body = renderBody(document.blocks, definitions, eol, {
     ...context,
@@ -165,11 +172,8 @@ export function renderDocumentBody(
     constants: context.constants ?? [],
   })
 
-  if (flowPrelude.length > 0 && body.length > 0) {
-    return `${flowPrelude}${eol}${body}`
-  }
-
-  return flowPrelude || body
+  const parts = [envPrelude, flowPrelude, body].filter((p) => p.length > 0)
+  return parts.join(eol)
 }
 
 export function renderBlocksOnly(
@@ -270,6 +274,9 @@ export function stringifyFlowTemplate(value: string, accessor = FLOW_INPUT_NAME,
     output += escapeTemplateSegment(value.slice(cursor, token.index))
     if (constants.includes(token.name)) {
       output += `\${${token.name}}`
+    } else if (token.name.startsWith(ENV_TOKEN_PREFIX)) {
+      const envKey = token.name.slice(ENV_TOKEN_PREFIX.length)
+      output += `\${${ENV_INPUT_NAME}.${envKey}}`
     } else {
       output += `\${${accessor}.${token.name}}`
     }
@@ -284,7 +291,7 @@ export function stringifyFlowTemplate(value: string, accessor = FLOW_INPUT_NAME,
 
 export function parseTemplateExpression(
   node: ts.Node | undefined,
-  accessorNames = [FLOW_INPUT_NAME],
+  accessorNames = [FLOW_INPUT_NAME, ENV_INPUT_NAME],
   knownIdentifiers: string[] = []
 ): string | null {
   if (!node) {
@@ -306,7 +313,10 @@ export function parseTemplateExpression(
   let value = node.head.text
 
   for (const span of node.templateSpans) {
-    const name = parseTemplatePlaceholder(span.expression, accessorNames)
+    let name = parseTemplatePlaceholder(span.expression, accessorNames)
+    if (!name && ts.isIdentifier(span.expression) && knownIdentifiers.includes(span.expression.text)) {
+      name = span.expression.text
+    }
     if (!name) {
       return null
     }
@@ -317,13 +327,22 @@ export function parseTemplateExpression(
   return value
 }
 
-export function validateFlowTemplate(value: string, flowInputs: FlowInputDefinition[], constants: string[] = []): string[] {
+export function validateFlowTemplate(value: string, flowInputs: FlowInputDefinition[], constants: string[] = [], availableEnvVarNames?: string[]): string[] {
   const available = new Set(flowInputs.map((entry) => entry.name))
+  const availableEnv = availableEnvVarNames ? new Set(availableEnvVarNames) : null
   const errors: string[] = []
   const tokens = collectTemplateTokens(value)
   const seen = new Set<string>()
 
   for (const token of tokens) {
+    if (token.name.startsWith(ENV_TOKEN_PREFIX)) {
+      const envKey = token.name.slice(ENV_TOKEN_PREFIX.length)
+      if (availableEnv && !availableEnv.has(envKey) && !seen.has(token.name)) {
+        errors.push(`Unknown environment variable placeholder: {{${token.name}}}`)
+        seen.add(token.name)
+      }
+      continue
+    }
     if (!available.has(token.name) && !constants.includes(token.name) && !seen.has(token.name)) {
       errors.push(`Unknown flow input placeholder: {{${token.name}}}`)
       seen.add(token.name)
@@ -439,6 +458,7 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
   const blocks: TestBlock[] = []
   const warnings: string[] = []
   let constants: string[] = []
+  let locatorConstantNodes: Map<string, ts.Node> = new Map()
   const sourceFile = body.getSourceFile()
   const sourceText = sourceFile.text
   const groupParsers = definitions.filter(
@@ -483,7 +503,7 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
       const remainingStatements = statements.slice(index)
       const grouped = groupParsers
         .map((definition) => definition.parseLeadingStatements?.(remainingStatements, sourceFile))
-        .find((value): value is { block: TestBlock; consumedCount: number } => Boolean(value && value.consumedCount > 0))
+        .find((value): value is { block: TestBlock; consumedCount: number; locatorConstantNodes?: Map<string, ts.Node> } => Boolean(value && value.consumedCount > 0))
 
       if (grouped) {
         const lastStatement = remainingStatements[grouped.consumedCount - 1]
@@ -492,6 +512,8 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
         // parseStatement calls can recognise references to them.
         if (grouped.block.kind === 'constants_group' && typeof grouped.block.values['definitions'] === 'string') {
           constants = extractConstantNames(grouped.block.values['definitions'])
+          locatorConstantNodes = grouped.locatorConstantNodes ?? new Map()
+          // locatorConstants names are derived from locatorConstantNodes keys
         }
         cursor = lastStatement?.end ?? statementEnd
         index += grouped.consumedCount - 1
@@ -501,7 +523,7 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
 
     const titleComment = getStatementTitleComment(sourceFile, sourceText, statement)
     const mapped = parsers
-      .map((definition) => definition.parseStatement?.(statement, titleComment?.title ?? null, constants))
+      .map((definition) => definition.parseStatement?.(statement, titleComment?.title ?? null, constants, locatorConstantNodes))
       .find((value): value is TestBlock => Boolean(value))
 
     if (mapped) {
@@ -531,7 +553,7 @@ function extractBlocksFromBody(body: ts.Block, definitions: ServerBlockDefinitio
     warnings.push('Some lines remain raw code blocks because they do not map to a supported visual block yet.')
   }
 
-  return { flowInputs: flowPrelude.flowInputs, constants, blocks: titledBlocks, warnings }
+  return { flowInputs: flowPrelude.flowInputs, constants, locatorConstants: [...locatorConstantNodes.keys()], blocks: titledBlocks, warnings }
 }
 
 function parseFlowPrelude(body: ts.Block): FlowPrelude {
@@ -835,6 +857,36 @@ function createRawCodeBlock(code: string, title?: string): TestBlock {
   }
 }
 
+export function hasEnvVarReferences(blocks: TestBlock[]): boolean {
+  for (const block of blocks) {
+    for (const value of Object.values(block.values)) {
+      if (typeof value === 'string') {
+        const tokens = collectTemplateTokens(value)
+        if (tokens.some((t) => t.name.startsWith(ENV_TOKEN_PREFIX))) return true
+      }
+    }
+  }
+  return false
+}
+
+function renderEnvPrelude(eol: string): string {
+  return [
+    `function ${ENV_RESOLVER_NAME}(rawEnv?: string): Record<string, string> {`,
+    '  if (!rawEnv) {',
+    '    return {}',
+    '  }',
+    '',
+    '  try {',
+    '    const parsed = JSON.parse(rawEnv) as Record<string, unknown>',
+    "    return Object.fromEntries(Object.entries(parsed ?? {}).filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string'))",
+    '  } catch {',
+    '    return {}',
+    '  }',
+    '}',
+    `const ${ENV_INPUT_NAME} = ${ENV_RESOLVER_NAME}(process.env.${ENV_ENV_VAR});`,
+  ].join(eol)
+}
+
 function renderFlowPrelude(flowInputs: FlowInputDefinition[], eol: string): string {
   if (flowInputs.length === 0) {
     return ''
@@ -921,6 +973,10 @@ function parseTemplatePlaceholder(expression: ts.Expression, accessorNames: stri
 
   if (!accessorNames.includes(expression.expression.text)) {
     return null
+  }
+
+  if (expression.expression.text === ENV_INPUT_NAME) {
+    return `${ENV_TOKEN_PREFIX}${expression.name.text}`
   }
 
   return expression.name.text

@@ -52,7 +52,9 @@ export class RunService {
     const logPath = path.join(runDir, 'log.txt')
     this.ensureLogFile(logPath)
 
-    const overrideConfigPath = createRunConfigOverride(rootPath, runId, runDir, reportDir) ?? undefined
+    const overrideConfigPath = createRunConfigOverride(rootPath, runId, runDir, reportDir, {
+      testDir: request.testDirOverride,
+    }) ?? undefined
     const commandRequest: RunRequest = {
       ...request,
       targetPath: normalizeTargetPathForPlaywright(rootPath, request.targetPath),
@@ -245,6 +247,44 @@ export class RunService {
     return this.db
       .prepare('SELECT * FROM runs WHERE projectId = ? ORDER BY startedAt DESC')
       .all(projectId) as RunRecord[]
+  }
+
+  getCaptureMeta(runId: string, tempFile: string, storageStatePath: string): { lastUrl: string | null; storageStatePath: string } {
+    // Clean up the temp spec file
+    try { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile) } catch { /* ignore */ }
+
+    // Read the meta file written by the capture test
+    const metaPath = storageStatePath.replace('.json', '-meta.json')
+    let lastUrl: string | null = null
+    try {
+      if (fs.existsSync(metaPath)) {
+        const raw = fs.readFileSync(metaPath, 'utf8')
+        lastUrl = (JSON.parse(raw) as { url?: string }).url ?? null
+      }
+    } catch { /* ignore */ }
+
+    return { lastUrl, storageStatePath }
+  }
+
+  getRecordedSnippet(runId: string): string | null {
+    const run = this.getRun(runId)
+    if (!run?.logPath || !fs.existsSync(run.logPath)) return null
+    const log = fs.readFileSync(run.logPath, 'utf8')
+    // PWDEBUG=1 prints the generated code to stdout after the user closes the Inspector.
+    // The output is a full .spec.ts file. We locate the last test(...) call and return
+    // just the snippet (without the import header) so it can be parsed by syncCode.
+    const lines = log.split(/\r?\n/)
+    let startIdx = -1
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i] ?? ''
+      // Match lines like: test('title', async ({ page }) => {
+      if (/^\s*test(?:\.\w+)?\s*\(/.test(line)) {
+        startIdx = i
+        break
+      }
+    }
+    if (startIdx === -1) return null
+    return lines.slice(startIdx).join('\n').trim() || null
   }
 
   getTestResults(runId: string): TestResultRecord[] {

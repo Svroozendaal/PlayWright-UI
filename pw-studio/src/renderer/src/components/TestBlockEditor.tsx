@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { IPC } from '../../../shared/types/ipc'
 import type {
   AvailableTestCase,
@@ -7,10 +7,13 @@ import type {
   BlockFieldSchema,
   BlockFieldValue,
   BlockTemplate,
+  FileReadResult,
   FlowInputDefinition,
   FlowInputMapping,
   IpcEnvelope,
   ManagedBlockTemplate,
+  RecorderStatusEvent,
+  RunRecord,
   SelectorSpec,
   TestBlock,
   TestBlockTemplate,
@@ -19,10 +22,113 @@ import type {
   TestEditorLibraryPayload,
   TestEditorMode,
   TestReferenceSpec,
+  TestResultRecord,
 } from '../../../shared/types/ipc'
 import { api } from '../api/client'
+import { useSocketEvent } from '../api/useSocket'
 import { CodeEditor } from './CodeEditor'
 import { ErrorBanner } from './ErrorBanner'
+
+// ---------------------------------------------------------------------------
+// Block error annotation helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the first file:line reference out of a Playwright error stack trace.
+ * Playwright errors look like: "Error: ...\n    at /abs/path/foo.spec.ts:42:10"
+ * Returns the 1-based line number, or null if not found.
+ */
+function parseErrorLineNumber(errorMessage: string): number | null {
+  const match = errorMessage.match(/:(\d+):\d+\)?$|:(\d+):\d+\s/m)
+  if (!match) return null
+  const raw = match[1] ?? match[2] ?? ''
+  const n = parseInt(raw, 10)
+  return isNaN(n) ? null : n
+}
+
+/**
+ * Search fileContent for the line containing the test title declaration and
+ * return the 1-based line number of the opening brace of the callback body
+ * (i.e. the line after `test('title', async ({ page }) => {`).
+ * Falls back to 1 if the title is not found.
+ */
+function findSnippetStartLine(fileContent: string, testTitle: string): number {
+  const lines = fileContent.split('\n')
+  // Escape special regex chars in the title
+  const escaped = testTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const titlePattern = new RegExp(escaped)
+  for (let i = 0; i < lines.length; i++) {
+    if (titlePattern.test(lines[i] ?? '')) {
+      return i + 1 // 1-based line of the test() call itself
+    }
+  }
+  return 1
+}
+
+/**
+ * Build a map of blockId → { start, end } line numbers (1-based, relative to
+ * the rendered snippet string). Blocks appear in the snippet body sequentially.
+ * Each block's code is found by splitting the snippet and matching regions.
+ */
+function computeBlockLineMap(
+  snippetCode: string,
+  blocks: TestBlock[]
+): Record<string, { start: number; end: number }> {
+  const snippetLines = snippetCode.split('\n')
+  const map: Record<string, { start: number; end: number }> = {}
+  let searchFromLine = 0 // 0-based index into snippetLines
+
+  for (const block of blocks) {
+    // Find the block's rendered code by looking for its title comment or any
+    // unique first-line. We search forward from the previous block's end.
+    // Since we don't have the rendered code per-block on the frontend, we use
+    // the block title as a heuristic anchor: the AST renderer emits
+    // `// <title>` as a comment line for raw_code blocks, and definitions
+    // render their own output. For non-raw blocks the title won't appear in
+    // code, so we assign each block an equal share of the remaining body lines.
+    const remaining = blocks.slice(blocks.indexOf(block))
+    const linesLeft = snippetLines.length - searchFromLine
+    const share = Math.max(1, Math.floor(linesLeft / remaining.length))
+
+    // Try to find a title-comment anchor first (works for raw_code blocks)
+    let foundAt = -1
+    const titleComment = `// ${block.title}`
+    for (let i = searchFromLine; i < snippetLines.length; i++) {
+      if ((snippetLines[i] ?? '').trim() === titleComment.trim()) {
+        foundAt = i
+        break
+      }
+    }
+
+    const startLine = (foundAt >= 0 ? foundAt : searchFromLine) + 1 // 1-based
+    const endLine = Math.min(startLine + share - 1, snippetLines.length)
+    map[block.id] = { start: startLine, end: endLine }
+    searchFromLine = endLine // next block starts after this one
+  }
+
+  return map
+}
+
+/**
+ * Given an absolute error line, the 1-based line where the test snippet starts
+ * in the file, and the block line map (relative to the snippet), return the
+ * blockId whose range contains the error line, or null.
+ */
+function findBlockAtLine(
+  absoluteErrorLine: number,
+  snippetStartLine: number,
+  blockLineMap: Record<string, { start: number; end: number }>
+): string | null {
+  // Convert absolute line to a relative line within the snippet
+  // snippetStartLine is the test() call; the body starts 1 line later
+  const relativeLine = absoluteErrorLine - snippetStartLine
+  for (const [blockId, range] of Object.entries(blockLineMap)) {
+    if (relativeLine >= range.start && relativeLine <= range.end) {
+      return blockId
+    }
+  }
+  return null
+}
 
 type DragState =
   | { type: 'block'; index: number }
@@ -40,6 +146,8 @@ type TestBlockEditorProps = {
   onCancelCreate?: () => void
   onRun?: () => void
   onRunWithOptions?: () => void
+  onDebug?: () => void
+  onRecordMore?: (doc: TestEditorDocument, opts: { startUrl: string; browser: string; outputPath: string }) => Promise<void>
 }
 
 export function TestBlockEditor({
@@ -51,6 +159,8 @@ export function TestBlockEditor({
   onCancelCreate,
   onRun,
   onRunWithOptions,
+  onDebug,
+  onRecordMore,
 }: TestBlockEditorProps): JSX.Element {
   const [document, setDocument] = useState<TestEditorDocument | null>(null)
   const [savedDocument, setSavedDocument] = useState<TestEditorDocument | null>(null)
@@ -60,6 +170,7 @@ export function TestBlockEditor({
   const [library, setLibrary] = useState<ManagedBlockTemplate[]>([])
   const [availableTemplateIds, setAvailableTemplateIds] = useState<string[]>([])
   const [availableTestCases, setAvailableTestCases] = useState<AvailableTestCase[]>([])
+  const [activeEnvVarNames, setActiveEnvVarNames] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [syncingCode, setSyncingCode] = useState(false)
@@ -71,6 +182,76 @@ export function TestBlockEditor({
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [librarySearch, setLibrarySearch] = useState('')
   const [flowInputsOpen, setFlowInputsOpen] = useState(false)
+  const [blockErrors, setBlockErrors] = useState<Record<string, string>>({})
+  const [snippetStartLine, setSnippetStartLine] = useState(1)
+  const [recordPanelOpen, setRecordPanelOpen] = useState(false)
+  const [recordStartUrl, setRecordStartUrl] = useState('')
+  const [recordBrowser, setRecordBrowser] = useState('chromium')
+  const [recordOutputPath, setRecordOutputPath] = useState('')
+  const [recording, setRecording] = useState(false)
+
+  const fetchLastRunError = useCallback(async (
+    doc: TestEditorDocument,
+    overrideSnippetStartLine?: number
+  ): Promise<void> => {
+    const startLine = overrideSnippetStartLine ?? snippetStartLine
+    const runsEnv = await api.invoke<RunRecord[]>(IPC.RUNS_LIST, { projectId })
+    const runs = (runsEnv as IpcEnvelope<RunRecord[]>).payload ?? []
+    const normFilePath = doc.filePath.replace(/\\/g, '/')
+    const failedRun = runs.find(
+      (r) =>
+        r.status === 'failed' &&
+        r.targetPath != null &&
+        normFilePath.includes(r.targetPath.replace(/\\/g, '/'))
+    )
+    if (!failedRun) {
+      setBlockErrors({})
+      return
+    }
+    const resultsEnv = await api.invoke<TestResultRecord[]>(IPC.RUNS_GET_TEST_RESULTS, { runId: failedRun.id })
+    const results = (resultsEnv as IpcEnvelope<TestResultRecord[]>).payload ?? []
+    const failed = results.find((r) => r.testTitle === doc.testTitle && r.status === 'failed')
+    if (!failed?.errorMessage) {
+      setBlockErrors({})
+      return
+    }
+    const errorLine = parseErrorLineNumber(failed.errorMessage)
+    if (!errorLine) {
+      setBlockErrors({})
+      return
+    }
+    const blockLineMap = computeBlockLineMap(doc.code, doc.blocks)
+    const blockId = findBlockAtLine(errorLine, startLine, blockLineMap)
+    if (blockId) {
+      setBlockErrors({ [blockId]: failed.errorMessage })
+    } else {
+      setBlockErrors({})
+    }
+  }, [projectId, snippetStartLine])
+
+  useSocketEvent(IPC.RUNS_STATUS_CHANGED, () => {
+    if (document) void fetchLastRunError(document)
+  })
+
+  useSocketEvent<RecorderStatusEvent>(IPC.RECORDER_STATUS, (data) => {
+    if (data.status === 'idle') setRecording(false)
+  })
+
+  // Recording clears when codegen finishes (RECORDER_STATUS idle), not when the
+  // state-capture run ends (that just triggers codegen to start).
+  // We only clear on RUNS_STATUS_CHANGED as a fallback if the recorder never started.
+
+  const handleStartRecording = async (): Promise<void> => {
+    if (!document || !onRecordMore) return
+    setRecording(true)
+    setRecordPanelOpen(false)
+    try {
+      await onRecordMore(document, { startUrl: recordStartUrl, browser: recordBrowser, outputPath: recordOutputPath })
+    } catch (err) {
+      setRecording(false)
+      setError({ code: 'RECORD_FAILED', message: err instanceof Error ? err.message : String(err) })
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -100,6 +281,7 @@ export function TestBlockEditor({
         setLibrary(libraryEnvelope.payload.templates)
         setAvailableTemplateIds(libraryEnvelope.payload.availableTemplateIds)
         setAvailableTestCases(libraryEnvelope.payload.availableTestCases)
+        setActiveEnvVarNames(libraryEnvelope.payload.activeEnvVarNames ?? [])
       }
 
       const documentEnvelope = documentResult as IpcEnvelope<TestEditorDocument>
@@ -110,10 +292,22 @@ export function TestBlockEditor({
       }
 
       if (documentEnvelope.payload) {
-        setDocument(documentEnvelope.payload)
-        setSavedDocument(documentEnvelope.payload)
-        setCodeDraft(documentEnvelope.payload.code)
+        const doc = documentEnvelope.payload
+        setDocument(doc)
+        setSavedDocument(doc)
+        setCodeDraft(doc.code)
         setCodeDirty(false)
+
+        // Compute snippet start line by reading the actual file
+        if (mode === 'existing') {
+          const fileEnv = await api.invoke<FileReadResult>(IPC.FILE_READ, { path: doc.filePath })
+          if (!cancelled) {
+            const fileContent = (fileEnv as IpcEnvelope<FileReadResult>).payload?.content ?? doc.code
+            const startLine = findSnippetStartLine(fileContent, doc.testTitle)
+            setSnippetStartLine(startLine)
+            void fetchLastRunError(doc, startLine)
+          }
+        }
       }
 
       setLoading(false)
@@ -121,7 +315,7 @@ export function TestBlockEditor({
 
     void loadEditor()
     return () => { cancelled = true }
-  }, [filePath, mode, projectId, testCaseRef?.ordinal, testCaseRef?.testTitle])
+  }, [filePath, fetchLastRunError, mode, projectId, testCaseRef?.ordinal, testCaseRef?.testTitle])
 
   const isDirty = useMemo(() => {
     if (!document || !savedDocument) return false
@@ -340,6 +534,20 @@ export function TestBlockEditor({
               ▶ Run
             </button>
           )}
+          {mode === 'existing' && onDebug && (
+            <button className="btn btn-secondary btn-sm" onClick={onDebug}>
+              ⬡ Debug
+            </button>
+          )}
+          {onRecordMore && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setRecordPanelOpen((o) => !o)}
+              disabled={recording}
+            >
+              {recording ? '⏺ Recording…' : '⏺ Record…'}
+            </button>
+          )}
           {mode === 'existing' && onRunWithOptions && (
             <button className="btn btn-secondary btn-sm" onClick={onRunWithOptions}>
               Options…
@@ -366,6 +574,56 @@ export function TestBlockEditor({
           </button>
         </div>
       </div>
+
+      {/* ===== Record panel ===== */}
+      {recordPanelOpen && onRecordMore && (
+        <div className="bed-record-panel">
+          {mode === 'existing' ? (
+            <span className="bed-record-hint">
+              Existing steps will be replayed automatically, then the Inspector opens for recording.
+            </span>
+          ) : (
+            <input
+              className="bed-record-input"
+              type="text"
+              placeholder="Start URL (optional)"
+              value={recordStartUrl}
+              onChange={(e) => setRecordStartUrl(e.target.value)}
+            />
+          )}
+          <select
+            className="bed-record-select"
+            value={recordBrowser}
+            onChange={(e) => setRecordBrowser(e.target.value)}
+          >
+            <option value="chromium">Chromium</option>
+            <option value="firefox">Firefox</option>
+            <option value="webkit">WebKit</option>
+          </select>
+          {mode === 'create' && (
+            <input
+              className="bed-record-input bed-record-output"
+              type="text"
+              placeholder="Output path (e.g. tests/my-test.spec.ts)"
+              value={recordOutputPath}
+              onChange={(e) => setRecordOutputPath(e.target.value)}
+            />
+          )}
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => void handleStartRecording()}
+            disabled={recording || (mode === 'create' && !recordOutputPath.trim())}
+          >
+            Start Recording
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setRecordPanelOpen(false)}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* ===== Banners ===== */}
       {error && <ErrorBanner code={error.code} message={error.message} />}
@@ -509,7 +767,9 @@ export function TestBlockEditor({
                                   definition={definition}
                                   flowInputs={document.flowInputs}
                                   constants={document.constants}
+                                  locatorConstants={document.locatorConstants ?? []}
                                   availableTestCases={selectableTestCases}
+                                  activeEnvVarNames={activeEnvVarNames}
                                   onChange={(nextBlock) =>
                                     updateDocument(
                                       (current) => ({
@@ -524,6 +784,19 @@ export function TestBlockEditor({
                                     )
                                   }
                                 />
+                              </div>
+                            )}
+
+                            {/* Error strip — shown when the last run failed at this block */}
+                            {blockErrors[block.id] && (
+                              <div
+                                className="bed-node-error-strip"
+                                title={blockErrors[block.id]}
+                              >
+                                <span className="bed-node-error-icon">✕</span>
+                                <span className="bed-node-error-text">
+                                  {(blockErrors[block.id] ?? '').split('\n')[0]}
+                                </span>
                               </div>
                             )}
                           </div>
@@ -799,12 +1072,14 @@ function FlowAwareInput({
   placeholder,
   flowInputs,
   constants,
+  activeEnvVarNames,
   onChange,
 }: {
   value: string
   placeholder?: string
   flowInputs: FlowInputDefinition[]
   constants: string[]
+  activeEnvVarNames: string[]
   onChange: (v: string) => void
 }): JSX.Element {
   const ref = useRef<HTMLInputElement>(null)
@@ -821,6 +1096,7 @@ function FlowAwareInput({
       <VariablePickerButton
         flowInputs={flowInputs}
         constants={constants}
+        activeEnvVarNames={activeEnvVarNames}
         onInsert={(snippet) => insertAtCursor(ref.current, value, onChange, snippet)}
       />
     </div>
@@ -833,6 +1109,7 @@ function FlowAwareTextarea({
   rows,
   flowInputs,
   constants,
+  activeEnvVarNames,
   onChange,
 }: {
   value: string
@@ -840,6 +1117,7 @@ function FlowAwareTextarea({
   rows?: number
   flowInputs: FlowInputDefinition[]
   constants: string[]
+  activeEnvVarNames: string[]
   onChange: (v: string) => void
 }): JSX.Element {
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -856,6 +1134,7 @@ function FlowAwareTextarea({
       <VariablePickerButton
         flowInputs={flowInputs}
         constants={constants}
+        activeEnvVarNames={activeEnvVarNames}
         onInsert={(snippet) => insertAtCursor(ref.current, value, onChange, snippet)}
       />
     </div>
@@ -865,10 +1144,12 @@ function FlowAwareTextarea({
 function VariablePickerButton({
   flowInputs,
   constants,
+  activeEnvVarNames,
   onInsert,
 }: {
   flowInputs: FlowInputDefinition[]
   constants: string[]
+  activeEnvVarNames: string[]
   onInsert: (snippet: string) => void
 }): JSX.Element | null {
   const [open, setOpen] = useState(false)
@@ -885,7 +1166,7 @@ function VariablePickerButton({
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  if (constants.length === 0 && flowInputs.length === 0) return null
+  if (constants.length === 0 && flowInputs.length === 0 && activeEnvVarNames.length === 0) return null
 
   return (
     <div ref={ref} style={{ position: 'absolute', right: 4, top: 6, zIndex: 10 }}>
@@ -937,6 +1218,25 @@ function VariablePickerButton({
               ))}
             </>
           )}
+          {activeEnvVarNames.length > 0 && (
+            <>
+              <div className="var-picker-section-label">Environment Variables</div>
+              {activeEnvVarNames.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="var-picker-item"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    onInsert(`{{env.${name}}}`)
+                    setOpen(false)
+                  }}
+                >
+                  {name}
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -951,14 +1251,18 @@ function BlockFields({
   definition,
   flowInputs,
   constants,
+  locatorConstants,
   availableTestCases,
+  activeEnvVarNames,
   onChange,
 }: {
   block: TestBlock
   definition?: BlockDefinition
   flowInputs: FlowInputDefinition[]
   constants: string[]
+  locatorConstants: string[]
   availableTestCases: AvailableTestCase[]
+  activeEnvVarNames: string[]
   onChange: (block: TestBlock) => void
 }): JSX.Element {
   if (!definition) {
@@ -979,7 +1283,9 @@ function BlockFields({
           value={block.values[field.key]}
           flowInputs={flowInputs}
           constants={constants}
+          locatorConstants={locatorConstants}
           availableTestCases={availableTestCases}
+          activeEnvVarNames={activeEnvVarNames}
           onChange={(value) =>
             onChange({ ...block, values: { ...block.values, [field.key]: value } })
           }
@@ -998,7 +1304,9 @@ function FieldEditor({
   value,
   flowInputs,
   constants,
+  locatorConstants,
   availableTestCases,
+  activeEnvVarNames,
   onChange,
 }: {
   block: TestBlock
@@ -1006,7 +1314,9 @@ function FieldEditor({
   value: BlockFieldValue | undefined
   flowInputs: FlowInputDefinition[]
   constants: string[]
+  locatorConstants: string[]
   availableTestCases: AvailableTestCase[]
+  activeEnvVarNames: string[]
   onChange: (value: BlockFieldValue) => void
 }): JSX.Element {
   if (block.kind === 'constants_group' && field.key === 'definitions') {
@@ -1029,6 +1339,7 @@ function FieldEditor({
             rows={field.rows}
             flowInputs={flowInputs}
             constants={constants}
+            activeEnvVarNames={activeEnvVarNames}
             onChange={(v) => onChange(v)}
           />
         </label>
@@ -1068,6 +1379,8 @@ function FieldEditor({
           value={getSelectorValue(value)}
           flowInputs={flowInputs}
           constants={constants}
+          locatorConstants={locatorConstants}
+          activeEnvVarNames={activeEnvVarNames}
           onChange={onChange}
         />
       )
@@ -1091,6 +1404,7 @@ function FieldEditor({
             placeholder={field.placeholder}
             flowInputs={flowInputs}
             constants={constants}
+            activeEnvVarNames={activeEnvVarNames}
             onChange={(v) => onChange(v)}
           />
         </label>
@@ -1106,25 +1420,101 @@ function SelectorEditor({
   value,
   flowInputs,
   constants,
+  locatorConstants,
+  activeEnvVarNames,
   onChange,
 }: {
   label: string
   value: SelectorSpec | null
   flowInputs: FlowInputDefinition[]
   constants: string[]
+  locatorConstants: string[]
+  activeEnvVarNames: string[]
   onChange: (value: BlockFieldValue) => void
 }): JSX.Element {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const pickerRef = useRef<HTMLDivElement>(null)
   const spec = value ?? { strategy: 'role', value: '', name: '' }
+
+  useEffect(() => {
+    if (!pickerOpen) return
+    const handler = (e: MouseEvent): void => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [pickerOpen])
 
   const update = (patch: Partial<SelectorSpec>): void => {
     onChange({ ...spec, ...patch } as SelectorSpec)
   }
 
+  const linkToVar = (name: string): void => {
+    onChange({ ...spec, varName: name } as SelectorSpec)
+    setPickerOpen(false)
+  }
+
+  const unlink = (): void => {
+    onChange({ ...spec, varName: undefined } as SelectorSpec)
+  }
+
+  const headerRight = locatorConstants.length > 0 ? (
+    <div ref={pickerRef} style={{ position: 'relative' }}>
+      <button
+        className={`selector-var-btn${pickerOpen ? ' active' : ''}`}
+        title="Link selector to a locator variable"
+        onClick={() => setPickerOpen((o) => !o)}
+      >
+        {'{ }'}
+      </button>
+      {pickerOpen && (
+        <div className="selector-var-menu">
+          <div className="selector-var-menu-label">Link to variable</div>
+          {locatorConstants.map((name) => (
+            <button
+              key={name}
+              className={`selector-var-item${spec.varName === name ? ' selected' : ''}`}
+              onClick={() => linkToVar(name)}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null
+
+  if (spec.varName) {
+    return (
+      <div>
+        <div className="selector-field-header">
+          <span className="selector-field-label">{label}</span>
+          {headerRight}
+        </div>
+        <div className="selector-linked">
+          <span className="selector-linked-label">
+            <code>{spec.varName}</code>
+          </span>
+          <button
+            className="selector-unlink-btn"
+            title="Unlink from variable and edit selector directly"
+            onClick={unlink}
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div>
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', display: 'block', marginBottom: 6 }}>
-        {label}
-      </span>
+      <div className="selector-field-header">
+        <span className="selector-field-label">{label}</span>
+        {headerRight}
+      </div>
       <div className="bed-selector-grid">
         <label>
           Strategy
@@ -1147,6 +1537,7 @@ function SelectorEditor({
             value={spec.value}
             flowInputs={flowInputs}
             constants={constants}
+            activeEnvVarNames={activeEnvVarNames}
             onChange={(v) => update({ value: v })}
           />
         </label>
@@ -1157,6 +1548,7 @@ function SelectorEditor({
               value={spec.name ?? ''}
               flowInputs={flowInputs}
               constants={constants}
+              activeEnvVarNames={activeEnvVarNames}
               onChange={(v) => update({ name: v })}
             />
           </label>
@@ -1239,12 +1631,13 @@ function TestReferenceEditor({
                 >
                   <option value="literal">Literal</option>
                   <option value="flow_input">Flow input</option>
+                  <option value="env_var">Env variable</option>
                 </select>
                 <input
                   type="text"
                   value={mapping.value}
                   onChange={(e) => updateMapping({ value: e.target.value })}
-                  placeholder={mapping.source === 'flow_input' ? 'Input name' : 'Value'}
+                  placeholder={mapping.source === 'flow_input' ? 'Input name' : mapping.source === 'env_var' ? 'Variable name' : 'Value'}
                 />
               </div>
             )
@@ -1409,9 +1802,11 @@ function getDisplayDetail(block: TestBlock, source: BlockDisplayConfig['detailSo
   switch (source) {
     case 'url':           return getStringValue(block.values['url'])
     case 'value':         return getStringValue(block.values['value'])
+    case 'title':         return getStringValue(block.values['title'])
+    case 'text':          return getStringValue(block.values['text'])
     case 'definitions':   return summariseRawCode(getStringValue(block.values['definitions']))
     case 'selector.value': return getSelectorValue(block.values['selector'])?.value ?? ''
-    case 'selector.name':  return getSelectorValue(block.values['selector'])?.name ?? getSelectorValue(block.values['selector'])?.value ?? ''
+    case 'selector.name':  return getSelectorValue(block.values['selector'])?.name ?? getSelectorValue(block.values['selector'])?.varName ?? getSelectorValue(block.values['selector'])?.value ?? ''
     case 'test.title':    return getTestReferenceValue(block.values['target'])?.testTitle ?? ''
     case 'code':          return summariseRawCode(getStringValue(block.values['code']))
   }
@@ -1511,6 +1906,30 @@ function renderBlockPreview(
         if (code.trim().length === 0) return `// ${sanitiseBlockTitle(block.title)}`
         return `// ${sanitiseBlockTitle(block.title)}\n${code}`
       }
+      case 'set_checked': {
+        const action = getStringValue(block.values['action']) === 'uncheck' ? 'uncheck' : 'check'
+        return `await ${sel(getSelectorValue(block.values['selector']))}.${action}();${titleComment}`
+      }
+      case 'expect_contains_text':
+        return `await expect(${sel(getSelectorValue(block.values['selector']))}).toContainText(${tv(getStringValue(block.values['text']))});${titleComment}`
+      case 'expect_value':
+        return `await expect(${sel(getSelectorValue(block.values['selector']))}).toHaveValue(${tv(getStringValue(block.values['value']))});${titleComment}`
+      case 'expect_checked': {
+        const isChecked = getStringValue(block.values['checked']) !== 'unchecked'
+        return isChecked
+          ? `await expect(${sel(getSelectorValue(block.values['selector']))}).toBeChecked();${titleComment}`
+          : `await expect(${sel(getSelectorValue(block.values['selector']))}).not.toBeChecked();${titleComment}`
+      }
+      case 'check_element':
+        return `await ${sel(getSelectorValue(block.values['selector']))}.check();${titleComment}`
+      case 'uncheck_element':
+        return `await ${sel(getSelectorValue(block.values['selector']))}.uncheck();${titleComment}`
+      case 'expect_title': {
+        const titleVal = getStringValue(block.values['title'])
+        return `await expect(page).toHaveTitle(${tv(titleVal)});${titleComment}`
+      }
+      case 'expect_text':
+        return `await expect(${sel(getSelectorValue(block.values['selector']))}).toHaveText(${tv(getStringValue(block.values['text']))});${titleComment}`
       case 'mx_click_row_cell':
         return `await mx.clickRowCell(${getStringValue(block.values['scope']) || 'page'}, { valueHint: ${tv(getStringValue(block.values['value']))}, container: ${tv(getStringValue(block.values['container']) || 'auto')}, confidence: ${tv(getStringValue(block.values['confidence']) || 'medium')} });${titleComment}`
       default:
@@ -1523,6 +1942,7 @@ function renderBlockPreview(
 
 function renderSelectorPreview(selector: SelectorSpec | null, constants: string[] = []): string {
   if (!selector) return `page.locator('')`
+  if (selector.varName) return selector.varName
   const tv = (v: string): string => renderTemplateValuePreview(v, constants)
   switch (selector.strategy) {
     case 'role':

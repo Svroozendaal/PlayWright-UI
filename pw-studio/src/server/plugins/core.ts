@@ -94,7 +94,7 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
     builtIn: true,
     fields: [{ key: 'selector', label: 'Selector', type: 'selector', required: true }],
     display: { label: 'Click element', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
-    parseStatement: (statement, title, constants) => parseClickBlock(statement, title, constants),
+    parseStatement: (statement, title, constants, locatorConstantNodes) => parseClickBlock(statement, title, constants, locatorConstantNodes),
     render: (block, context) => `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.click();${renderTitleComment(block)}`,
     validate: (block, context) => validateSelectorBlock(block, context.flowInputs),
   },
@@ -110,7 +110,7 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
       { key: 'value', label: 'Value', type: 'text', required: true },
     ],
     display: { label: 'Fill field', detailSource: 'selector.value', quoteDetail: true, separator: ': ' },
-    parseStatement: (statement, title, constants) => parseFillBlock(statement, title, constants),
+    parseStatement: (statement, title, constants, locatorConstantNodes) => parseFillBlock(statement, title, constants, locatorConstantNodes),
     render: (block, context) =>
       `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.fill(${renderFlowString(readStringValue(block, 'value'), context)});${renderTitleComment(block)}`,
     validate: (block, context) => [
@@ -159,7 +159,7 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
     builtIn: true,
     fields: [{ key: 'selector', label: 'Selector', type: 'selector', required: true }],
     display: { label: 'Expect visible', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
-    parseStatement: (statement, title, constants) => parseExpectVisibleBlock(statement, title, constants),
+    parseStatement: (statement, title, constants, locatorConstantNodes) => parseExpectVisibleBlock(statement, title, constants, locatorConstantNodes),
     render: (block, context) => `await expect(${renderSelector(readSelectorValue(block, 'selector'), context)}).toBeVisible();${renderTitleComment(block)}`,
     validate: (block, context) => validateSelectorBlock(block, context.flowInputs),
   },
@@ -175,7 +175,7 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
       { key: 'key', label: 'Key', type: 'text', required: true, placeholder: 'Enter' },
     ],
     display: { label: 'Press key', detailSource: 'value', quoteDetail: true, separator: ': ' },
-    parseStatement: (statement, title, constants) => parsePressKeyBlock(statement, title, constants),
+    parseStatement: (statement, title, constants, locatorConstantNodes) => parsePressKeyBlock(statement, title, constants, locatorConstantNodes),
     render: (block, context) =>
       `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.press(${renderFlowString(readStringValue(block, 'key'), context)});${renderTitleComment(block)}`,
     validate: (block, context) => [
@@ -195,13 +195,207 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
       { key: 'value', label: 'Option value', type: 'text', required: true, placeholder: 'option-value' },
     ],
     display: { label: 'Select option', detailSource: 'value', quoteDetail: true, separator: ': ' },
-    parseStatement: (statement, title, constants) => parseSelectOptionBlock(statement, title, constants),
+    parseStatement: (statement, title, constants, locatorConstantNodes) => parseSelectOptionBlock(statement, title, constants, locatorConstantNodes),
     render: (block, context) =>
       `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.selectOption(${renderFlowString(readStringValue(block, 'value'), context)});${renderTitleComment(block)}`,
     validate: (block, context) => [
       ...validateSelectorBlock(block, context.flowInputs),
       ...validateStringTemplates([readStringValue(block, 'value')], context.flowInputs, context.constants),
     ],
+  },
+  {
+    kind: 'set_checked',
+    name: 'Set checked',
+    description: 'Tick or untick a checkbox or radio button.',
+    category: 'Actions',
+    defaultTitle: 'set checked',
+    builtIn: true,
+    fields: [
+      { key: 'selector', label: 'Element', type: 'selector', required: true },
+      {
+        key: 'action',
+        label: 'Action',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'check', label: 'Check' },
+          { value: 'uncheck', label: 'Uncheck' },
+        ],
+      },
+    ],
+    display: { label: 'Set checked', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
+    parseStatement: (statement, title, constants, locatorConstantNodes) =>
+      parseCheckElementBlock(statement, title, constants, locatorConstantNodes) ??
+      parseUncheckElementBlock(statement, title, constants, locatorConstantNodes),
+    render: (block, context) => {
+      const action = readStringValue(block, 'action') === 'uncheck' ? 'uncheck' : 'check'
+      return `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.${action}();${renderTitleComment(block)}`
+    },
+    validate: (block, context) => validateSelectorBlock(block, context.flowInputs),
+  },
+  // Legacy kinds kept for backwards-compatible parsing of existing .spec.ts files.
+  {
+    kind: 'check_element',
+    name: 'Check',
+    description: 'Tick a checkbox or radio button.',
+    category: 'Actions',
+    defaultTitle: 'check',
+    builtIn: true,
+    fields: [{ key: 'selector', label: 'Element', type: 'selector', required: true }],
+    display: { label: 'Check', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
+    parseStatement: () => null,
+    render: (block, context) => `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.check();${renderTitleComment(block)}`,
+    validate: (block, context) => validateSelectorBlock(block, context.flowInputs),
+  },
+  {
+    kind: 'uncheck_element',
+    name: 'Uncheck',
+    description: 'Untick a checkbox or radio button.',
+    category: 'Actions',
+    defaultTitle: 'uncheck',
+    builtIn: true,
+    fields: [{ key: 'selector', label: 'Element', type: 'selector', required: true }],
+    display: { label: 'Uncheck', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
+    parseStatement: () => null,
+    render: (block, context) => `await ${renderSelector(readSelectorValue(block, 'selector'), context)}.uncheck();${renderTitleComment(block)}`,
+    validate: (block, context) => validateSelectorBlock(block, context.flowInputs),
+  },
+  {
+    kind: 'expect_title',
+    name: 'Expect title',
+    description: 'Assert the page title matches a value or pattern.',
+    category: 'Assertions',
+    defaultTitle: 'title should be',
+    builtIn: true,
+    fields: [{ key: 'title', label: 'Title', type: 'text', required: true }],
+    display: { label: 'Expect title', detailSource: 'title', separator: ': ' },
+    parseStatement: (statement, title, constants) => parseExpectTitleBlock(statement, title, constants),
+    render: (block, context) => {
+      const raw = readStringValue(block, 'title')
+      const isRegex = /^\/.*\/[a-z]*$/.test(raw) && !raw.includes('{{')
+      const titleCode = isRegex ? raw : renderFlowString(raw, context)
+      return `await expect(page).toHaveTitle(${titleCode});${renderTitleComment(block)}`
+    },
+    validate: (block, context) => {
+      const raw = readStringValue(block, 'title')
+      if (/^\/.*\/[a-z]*$/.test(raw)) return []
+      return validateStringTemplates([raw], context.flowInputs, context.constants)
+    },
+  },
+  {
+    kind: 'expect_text',
+    name: 'Expect text',
+    description: 'Assert an element contains the expected text.',
+    category: 'Assertions',
+    defaultTitle: 'text should be',
+    builtIn: true,
+    fields: [
+      { key: 'selector', label: 'Element', type: 'selector', required: true },
+      { key: 'text', label: 'Expected text', type: 'text', required: true },
+    ],
+    display: { label: 'Expect text', detailSource: 'text', separator: ': ' },
+    parseStatement: (statement, title, constants, locatorConstantNodes) => parseExpectTextBlock(statement, title, constants, locatorConstantNodes),
+    render: (block, context) => {
+      const sel = renderSelector(readSelectorValue(block, 'selector'), context)
+      const raw = readStringValue(block, 'text')
+      const isRegex = /^\/.*\/[a-z]*$/.test(raw) && !raw.includes('{{')
+      const textCode = isRegex ? raw : renderFlowString(raw, context)
+      return `await expect(${sel}).toHaveText(${textCode});${renderTitleComment(block)}`
+    },
+    validate: (block, context) => [
+      ...validateSelectorBlock(block, context.flowInputs),
+      ...(() => {
+        const raw = readStringValue(block, 'text')
+        if (/^\/.*\/[a-z]*$/.test(raw)) return []
+        return validateStringTemplates([raw], context.flowInputs, context.constants)
+      })(),
+    ],
+  },
+  {
+    kind: 'expect_contains_text',
+    name: 'Expect contains text',
+    description: 'Assert an element contains a substring of text.',
+    category: 'Assertions',
+    defaultTitle: 'text should contain',
+    builtIn: true,
+    fields: [
+      { key: 'selector', label: 'Element', type: 'selector', required: true },
+      { key: 'text', label: 'Expected text', type: 'text', required: true },
+    ],
+    display: { label: 'Expect contains text', detailSource: 'text', separator: ': ' },
+    parseStatement: (statement, title, constants, locatorConstantNodes) =>
+      parseExpectContainsTextBlock(statement, title, constants, locatorConstantNodes),
+    render: (block, context) => {
+      const sel = renderSelector(readSelectorValue(block, 'selector'), context)
+      const raw = readStringValue(block, 'text')
+      const isRegex = /^\/.*\/[a-z]*$/.test(raw) && !raw.includes('{{')
+      const textCode = isRegex ? raw : renderFlowString(raw, context)
+      return `await expect(${sel}).toContainText(${textCode});${renderTitleComment(block)}`
+    },
+    validate: (block, context) => [
+      ...validateSelectorBlock(block, context.flowInputs),
+      ...(() => {
+        const raw = readStringValue(block, 'text')
+        if (/^\/.*\/[a-z]*$/.test(raw)) return []
+        return validateStringTemplates([raw], context.flowInputs, context.constants)
+      })(),
+    ],
+  },
+  {
+    kind: 'expect_value',
+    name: 'Expect value',
+    description: 'Assert an input, select, or textarea has a specific value.',
+    category: 'Assertions',
+    defaultTitle: 'value should be',
+    builtIn: true,
+    fields: [
+      { key: 'selector', label: 'Element', type: 'selector', required: true },
+      { key: 'value', label: 'Expected value', type: 'text', required: true },
+    ],
+    display: { label: 'Expect value', detailSource: 'value', separator: ': ' },
+    parseStatement: (statement, title, constants, locatorConstantNodes) =>
+      parseExpectValueBlock(statement, title, constants, locatorConstantNodes),
+    render: (block, context) => {
+      const sel = renderSelector(readSelectorValue(block, 'selector'), context)
+      const value = renderFlowString(readStringValue(block, 'value'), context)
+      return `await expect(${sel}).toHaveValue(${value});${renderTitleComment(block)}`
+    },
+    validate: (block, context) => [
+      ...validateSelectorBlock(block, context.flowInputs),
+      ...validateStringTemplates([readStringValue(block, 'value')], context.flowInputs, context.constants),
+    ],
+  },
+  {
+    kind: 'expect_checked',
+    name: 'Expect checked',
+    description: 'Assert a checkbox or radio button is checked or unchecked.',
+    category: 'Assertions',
+    defaultTitle: 'should be checked',
+    builtIn: true,
+    fields: [
+      { key: 'selector', label: 'Element', type: 'selector', required: true },
+      {
+        key: 'checked',
+        label: 'State',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'checked', label: 'Checked' },
+          { value: 'unchecked', label: 'Unchecked' },
+        ],
+      },
+    ],
+    display: { label: 'Expect checked', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
+    parseStatement: (statement, title, constants, locatorConstantNodes) =>
+      parseExpectCheckedBlock(statement, title, constants, locatorConstantNodes),
+    render: (block, context) => {
+      const sel = renderSelector(readSelectorValue(block, 'selector'), context)
+      const isChecked = readStringValue(block, 'checked') !== 'unchecked'
+      return isChecked
+        ? `await expect(${sel}).toBeChecked();${renderTitleComment(block)}`
+        : `await expect(${sel}).not.toBeChecked();${renderTitleComment(block)}`
+    },
+    validate: (block, context) => validateSelectorBlock(block, context.flowInputs),
   },
   {
     kind: 'raw_code',
@@ -326,6 +520,72 @@ const coreBlockTemplates: BlockTemplate[] = [
     display: { label: 'Select option', detailSource: 'value', quoteDetail: true, separator: ': ' },
   },
   {
+    id: 'set-checked',
+    name: 'Set checked',
+    description: 'Tick or untick a checkbox or radio button.',
+    category: 'Actions',
+    block: {
+      kind: 'set_checked',
+      values: { selector: createRoleSelector('checkbox', 'Accept terms'), action: 'check' },
+    },
+    display: { label: 'Set checked', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
+  },
+  {
+    id: 'expect-title',
+    name: 'Expect title',
+    description: 'Assert the page title matches a value or pattern.',
+    category: 'Assertions',
+    block: {
+      kind: 'expect_title',
+      values: { title: 'My App - Home' },
+    },
+    display: { label: 'Expect title', detailSource: 'title', separator: ': ' },
+  },
+  {
+    id: 'expect-text',
+    name: 'Expect text',
+    description: 'Assert an element contains the expected text.',
+    category: 'Assertions',
+    block: {
+      kind: 'expect_text',
+      values: { selector: createRoleSelector('heading', 'Welcome'), text: 'Welcome' },
+    },
+    display: { label: 'Expect text', detailSource: 'text', separator: ': ' },
+  },
+  {
+    id: 'expect-contains-text',
+    name: 'Expect contains text',
+    description: 'Assert an element contains a substring of text.',
+    category: 'Assertions',
+    block: {
+      kind: 'expect_contains_text',
+      values: { selector: createRoleSelector('alert', ''), text: 'Success' },
+    },
+    display: { label: 'Expect contains text', detailSource: 'text', separator: ': ' },
+  },
+  {
+    id: 'expect-value',
+    name: 'Expect value',
+    description: 'Assert an input or select has a specific value.',
+    category: 'Assertions',
+    block: {
+      kind: 'expect_value',
+      values: { selector: { strategy: 'css', value: '#myInput' }, value: 'expected' },
+    },
+    display: { label: 'Expect value', detailSource: 'value', separator: ': ' },
+  },
+  {
+    id: 'expect-checked',
+    name: 'Expect checked',
+    description: 'Assert a checkbox or radio button is checked or unchecked.',
+    category: 'Assertions',
+    block: {
+      kind: 'expect_checked',
+      values: { selector: createRoleSelector('checkbox', 'Accept terms'), checked: 'checked' },
+    },
+    display: { label: 'Expect checked', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
+  },
+  {
     id: 'raw-code',
     name: 'Raw code',
     description: 'Insert plain Playwright or TypeScript statements when no visual block exists yet.',
@@ -337,6 +597,112 @@ const coreBlockTemplates: BlockTemplate[] = [
     display: { label: 'Raw code', detailSource: 'code' },
   },
 ]
+
+function parseExpectContainsTextBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
+  if (!ts.isExpressionStatement(statement)) return null
+  const expression = unwrapAwait(statement.expression)
+  if (!ts.isCallExpression(expression)) return null
+  if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'toContainText') return null
+  const target = expression.expression.expression
+  if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression) || target.expression.text !== 'expect') return null
+  const selectorArg = target.arguments[0]
+  if (!selectorArg) return null
+  const selector = parseSelectorExpression(selectorArg, constants, locatorNodes)
+  if (!selector) return null
+  const textArg = expression.arguments[0]
+  if (!textArg) return null
+  let textValue: string | null = null
+  if (ts.isRegularExpressionLiteral(textArg)) {
+    textValue = textArg.text
+  } else {
+    textValue = parseTemplateExpression(textArg, undefined, constants)
+  }
+  if (textValue === null) return null
+  return createParsedBlock('expect_contains_text', title, { selector, text: textValue })
+}
+
+function parseExpectValueBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
+  if (!ts.isExpressionStatement(statement)) return null
+  const expression = unwrapAwait(statement.expression)
+  if (!ts.isCallExpression(expression)) return null
+  if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'toHaveValue') return null
+  const target = expression.expression.expression
+  if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression) || target.expression.text !== 'expect') return null
+  const selectorArg = target.arguments[0]
+  if (!selectorArg) return null
+  const selector = parseSelectorExpression(selectorArg, constants, locatorNodes)
+  if (!selector) return null
+  const value = parseTemplateExpression(expression.arguments[0], undefined, constants)
+  if (value === null) return null
+  return createParsedBlock('expect_value', title, { selector, value })
+}
+
+function parseExpectCheckedBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
+  if (!ts.isExpressionStatement(statement)) return null
+  const expression = unwrapAwait(statement.expression)
+  if (!ts.isCallExpression(expression)) return null
+
+  // Handle both expect(sel).toBeChecked() and expect(sel).not.toBeChecked()
+  const callExpr = expression.expression
+  if (!ts.isPropertyAccessExpression(callExpr)) return null
+
+  let isNegated = false
+  let expectCall: ts.CallExpression
+
+  if (callExpr.name.text === 'toBeChecked') {
+    // expect(sel).toBeChecked()
+    const target = callExpr.expression
+    if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression) || target.expression.text !== 'expect') return null
+    expectCall = target
+  } else if (callExpr.name.text === 'not') {
+    // This shouldn't happen — `not` is a property, not a call. Skip this pattern.
+    return null
+  } else {
+    return null
+  }
+
+  // Also handle: await expect(sel).not.toBeChecked()
+  // AST: CallExpression { expression: PropertyAccess { name: 'toBeChecked', expression: PropertyAccess { name: 'not', expression: CallExpression { expect } } } }
+  // Already handled by checking for `.not.toBeChecked` below:
+  if (callExpr.name.text !== 'toBeChecked') return null
+
+  // Detect negation: expression.expression may be `.not` property on expect()
+  const inner = callExpr.expression
+  if (ts.isPropertyAccessExpression(inner) && inner.name.text === 'not') {
+    // expect(sel).not.toBeChecked()
+    const expectTarget = inner.expression
+    if (!ts.isCallExpression(expectTarget) || !ts.isIdentifier(expectTarget.expression) || expectTarget.expression.text !== 'expect') return null
+    isNegated = true
+    expectCall = expectTarget
+  } else if (ts.isCallExpression(inner) && ts.isIdentifier(inner.expression) && inner.expression.text === 'expect') {
+    // expect(sel).toBeChecked()
+    isNegated = false
+    expectCall = inner
+  } else {
+    return null
+  }
+
+  const selectorArg = expectCall.arguments[0]
+  if (!selectorArg) return null
+  const selector = parseSelectorExpression(selectorArg, constants, locatorNodes)
+  if (!selector) return null
+  return createParsedBlock('expect_checked', title, { selector, checked: isNegated ? 'unchecked' : 'checked' })
+}
 
 function parseGotoBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
@@ -357,10 +723,23 @@ function parseGotoBlock(statement: ts.Statement, title: string | null, constants
   return createParsedBlock('goto_url', title, { url })
 }
 
+const LOCATOR_METHODS = ['getByRole', 'getByText', 'getByLabel', 'getByTestId', 'getByPlaceholder', 'locator']
+
+function isLocatorExpression(node: ts.Node): boolean {
+  if (!ts.isCallExpression(node)) return false
+  const expr = node.expression
+  if (!ts.isPropertyAccessExpression(expr)) return false
+  return (
+    ts.isIdentifier(expr.expression) &&
+    expr.expression.text === 'page' &&
+    LOCATOR_METHODS.includes(expr.name.text)
+  )
+}
+
 function parseConstantsGroup(
   statements: readonly ts.Statement[],
   sourceFile: ts.SourceFile
-): { block: TestBlock; consumedCount: number } | null {
+): { block: TestBlock; consumedCount: number; locatorConstantNodes?: Map<string, ts.Node> } | null {
   const contiguousConstStatements: ts.Statement[] = []
 
   for (const statement of statements) {
@@ -385,30 +764,52 @@ function parseConstantsGroup(
     .slice(first.getStart(sourceFile), last.end)
     .replace(/\r\n/g, '\n')
 
+  const locatorConstantNodes = new Map<string, ts.Node>()
+  for (const stmt of contiguousConstStatements) {
+    if (!ts.isVariableStatement(stmt)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || !decl.initializer) continue
+      if (isLocatorExpression(decl.initializer)) {
+        locatorConstantNodes.set(decl.name.text, decl.initializer)
+      }
+    }
+  }
+
   return {
     block: createParsedBlock('constants_group', 'constants', {
       definitions: code,
     }),
     consumedCount: contiguousConstStatements.length,
+    locatorConstantNodes,
   }
 }
 
-function parseClickBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
+function parseClickBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
   if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'click') return null
-  const selector = parseSelectorExpression(expression.expression.expression, constants)
+  const selector = parseSelectorExpression(expression.expression.expression, constants, locatorNodes)
   if (!selector) return null
   return createParsedBlock('click_element', title, { selector })
 }
 
-function parseFillBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
+function parseFillBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
   if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'fill') return null
-  const selector = parseSelectorExpression(expression.expression.expression, constants)
+  const selector = parseSelectorExpression(expression.expression.expression, constants, locatorNodes)
   const value = parseTemplateExpression(expression.arguments[0], undefined, constants)
   if (!selector || value === null) return null
   return createParsedBlock('fill_field', title, { selector, value })
@@ -428,7 +829,12 @@ function parseExpectUrlBlock(statement: ts.Statement, title: string | null, cons
   return createParsedBlock('expect_url', title, { url })
 }
 
-function parseExpectVisibleBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
+function parseExpectVisibleBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
@@ -437,31 +843,124 @@ function parseExpectVisibleBlock(statement: ts.Statement, title: string | null, 
   if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression) || target.expression.text !== 'expect') return null
   const selectorArg = target.arguments[0]
   if (!selectorArg) return null
-  const selector = parseSelectorExpression(selectorArg, constants)
+  const selector = parseSelectorExpression(selectorArg, constants, locatorNodes)
   if (!selector) return null
   return createParsedBlock('expect_visible', title, { selector })
 }
 
-function parsePressKeyBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
+function parsePressKeyBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
   if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'press') return null
-  const selector = parseSelectorExpression(expression.expression.expression, constants)
+  const selector = parseSelectorExpression(expression.expression.expression, constants, locatorNodes)
   const key = parseTemplateExpression(expression.arguments[0], undefined, constants)
   if (!selector || key === null) return null
   return createParsedBlock('press_key', title, { selector, key })
 }
 
-function parseSelectOptionBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {
+function parseSelectOptionBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
   if (!ts.isExpressionStatement(statement)) return null
   const expression = unwrapAwait(statement.expression)
   if (!ts.isCallExpression(expression)) return null
   if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'selectOption') return null
-  const selector = parseSelectorExpression(expression.expression.expression, constants)
+  const selector = parseSelectorExpression(expression.expression.expression, constants, locatorNodes)
   const value = parseTemplateExpression(expression.arguments[0], undefined, constants)
   if (!selector || value === null) return null
   return createParsedBlock('select_option', title, { selector, value })
+}
+
+function parseCheckElementBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
+  if (!ts.isExpressionStatement(statement)) return null
+  const expression = unwrapAwait(statement.expression)
+  if (!ts.isCallExpression(expression)) return null
+  if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'check') return null
+  const selector = parseSelectorExpression(expression.expression.expression, constants, locatorNodes)
+  if (!selector) return null
+  return createParsedBlock('set_checked', title, { selector, action: 'check' })
+}
+
+function parseUncheckElementBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
+  if (!ts.isExpressionStatement(statement)) return null
+  const expression = unwrapAwait(statement.expression)
+  if (!ts.isCallExpression(expression)) return null
+  if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'uncheck') return null
+  const selector = parseSelectorExpression(expression.expression.expression, constants, locatorNodes)
+  if (!selector) return null
+  return createParsedBlock('set_checked', title, { selector, action: 'uncheck' })
+}
+
+function parseExpectTitleBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = []
+): TestBlock | null {
+  if (!ts.isExpressionStatement(statement)) return null
+  const expression = unwrapAwait(statement.expression)
+  if (!ts.isCallExpression(expression)) return null
+  if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'toHaveTitle') return null
+  const target = expression.expression.expression
+  if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression) || target.expression.text !== 'expect') return null
+  const actual = target.arguments[0]
+  if (!actual || !ts.isIdentifier(actual) || actual.text !== 'page') return null
+  const titleArg = expression.arguments[0]
+  if (!titleArg) return null
+  let titleValue: string | null = null
+  if (ts.isRegularExpressionLiteral(titleArg)) {
+    titleValue = titleArg.text
+  } else {
+    titleValue = parseTemplateExpression(titleArg, undefined, constants)
+  }
+  if (titleValue === null) return null
+  return createParsedBlock('expect_title', title, { title: titleValue })
+}
+
+function parseExpectTextBlock(
+  statement: ts.Statement,
+  title: string | null,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): TestBlock | null {
+  if (!ts.isExpressionStatement(statement)) return null
+  const expression = unwrapAwait(statement.expression)
+  if (!ts.isCallExpression(expression)) return null
+  if (!ts.isPropertyAccessExpression(expression.expression) || expression.expression.name.text !== 'toHaveText') return null
+  const target = expression.expression.expression
+  if (!ts.isCallExpression(target) || !ts.isIdentifier(target.expression) || target.expression.text !== 'expect') return null
+  const selectorArg = target.arguments[0]
+  if (!selectorArg) return null
+  const selector = parseSelectorExpression(selectorArg, constants, locatorNodes)
+  if (!selector) return null
+  const textArg = expression.arguments[0]
+  if (!textArg) return null
+  let textValue: string | null = null
+  if (ts.isRegularExpressionLiteral(textArg)) {
+    textValue = textArg.text
+  } else {
+    textValue = parseTemplateExpression(textArg, undefined, constants)
+  }
+  if (textValue === null) return null
+  return createParsedBlock('expect_text', title, { selector, text: textValue })
 }
 
 function parseUseSubflowBlock(statement: ts.Statement, title: string | null): TestBlock | null {
@@ -499,7 +998,18 @@ function unwrapAwait(expression: ts.Expression): ts.Expression {
   return ts.isAwaitExpression(expression) ? expression.expression : expression
 }
 
-function parseSelectorExpression(expression: ts.Expression, constants: string[] = []): SelectorSpec | null {
+function parseSelectorExpression(
+  expression: ts.Expression,
+  constants: string[] = [],
+  locatorNodes: Map<string, ts.Node> = new Map()
+): SelectorSpec | null {
+  if (ts.isIdentifier(expression) && locatorNodes.has(expression.text)) {
+    const locatorNode = locatorNodes.get(expression.text)!
+    const resolved = parseSelectorExpression(locatorNode as ts.Expression, constants, new Map())
+    if (resolved) return { ...resolved, varName: expression.text }
+    return null
+  }
+
   if (!ts.isCallExpression(expression) || !ts.isPropertyAccessExpression(expression.expression)) {
     return null
   }
@@ -620,6 +1130,10 @@ function createParsedBlock(kind: string, title: string | null, values: TestBlock
 function renderSelector(selector: SelectorSpec | null, context: ServerBlockContext): string {
   if (!selector) {
     return "page.locator('')"
+  }
+
+  if (selector.varName) {
+    return selector.varName
   }
 
   switch (selector.strategy) {

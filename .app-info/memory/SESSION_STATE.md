@@ -11,9 +11,9 @@ OPEN_BLOCKERS: [none or details]
 
 ## LIVE_LOG
 
-CURRENT_SCOPE: Refresh the full PW Studio documentation set and add a reusable app-specific skill for creating building blocks.
-ACTIVE_AGENT: Developer
-LAST_HANDOFF: Plugin-first runtime and the shipped Mendix Portable Workflow plugin were completed on 2026-03-29.
+CURRENT_SCOPE: Suites page — batch test execution with grouped, configured, stored test suites.
+ACTIVE_AGENT: Designer + Developer
+LAST_HANDOFF: Suites feature completed 2026-03-31.
 OPEN_BLOCKERS: none
 
 ## HANDOFF - Developer - 2026-03-28
@@ -44,4 +44,10 @@ BLOCKERS: none
 STATUS: COMPLETE
 NEXT_AGENT: none
 SUMMARY: PW Studio documentation now reflects the current shipped platform, including the plugin-first runtime, visual block editor, global block library, project integrations, and the shipped Mendix plugin. An app-specific `create-building-blocks` skill was also added to guide future block and template work.
+BLOCKERS: none
+
+## HANDOFF - Developer+Designer - 2026-03-31
+STATUS: COMPLETE
+NEXT_AGENT: none
+SUMMARY: Suites feature added. Suites are stored in `.pw-studio/suites.json` per project. Each suite holds ordered entries (file or single test), each with independent browser, flow input overrides, and per-test enable/disable toggles. The Suites page has a two-panel layout — suite list left, detail right — with a tree picker modal for adding tests. Run Suite fires each enabled entry as a sequential individual run via the existing RunService; the frontend queue is driven by RUNS_STATUS_CHANGED WebSocket events. Suites appear in the sidebar between Explorer and Runs.
 BLOCKERS: none

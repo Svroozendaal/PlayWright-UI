@@ -5,7 +5,10 @@ import type {
   FileReadResult,
   ExplorerNode,
   IpcEnvelope,
+  ProjectConfigSummary,
+  RecorderStatusEvent,
   RunRequest,
+  TestBlock,
   TestCaseRef,
   TestEditorDocument,
   TestStatusMap,
@@ -106,6 +109,7 @@ export function ExplorerPage(): JSX.Element {
     targetPath?: string; target?: string; testTitleFilter?: string; testCaseRef?: TestCaseRef
   } | null>(null)
   const [createTestFilePath, setCreateTestFilePath] = useState<string | null>(null)
+  const [editorReloadKey, setEditorReloadKey] = useState(0)
 
   // Code viewer state
   const [detailTab, setDetailTab] = useState<DetailTab>('code')
@@ -119,6 +123,21 @@ export function ExplorerPage(): JSX.Element {
   const [creatingIn, setCreatingIn] = useState<{ parentPath: string; type: 'file' | 'folder' } | null>(null)
   const [newName, setNewName] = useState('')
   const newNameRef = useRef<HTMLInputElement>(null)
+
+  // Pending record merge state — set when codegen or state-capture is running from block editor
+  const [pendingRecordMerge, setPendingRecordMerge] = useState<
+    | { kind: 'codegen'; doc: TestEditorDocument; tempOutputPath: string; isCreate: boolean }
+    | { kind: 'state-capture'; doc: TestEditorDocument; runId: string; tempFile: string; storageStatePath: string; outputPath: string; browser: string }
+    | null
+  >(null)
+
+  // Review dialog — shown after recording finishes so user can choose append/replace/cancel
+  const [mergeReview, setMergeReview] = useState<{
+    doc: TestEditorDocument
+    newBlocks: TestBlock[]
+    tempOutputPath: string
+    isCreate: boolean
+  } | null>(null)
 
   const contextMenuRef = useRef<HTMLDivElement>(null)
 
@@ -153,6 +172,27 @@ export function ExplorerPage(): JSX.Element {
 
   useSocketEvent(IPC.RUNS_STATUS_CHANGED, () => {
     void fetchLastResults()
+  })
+
+  useSocketEvent<RecorderStatusEvent>(IPC.RECORDER_STATUS, (data) => {
+    if (data.status === 'idle' && pendingRecordMerge?.kind === 'codegen' && !mergeReview) {
+      const capture = pendingRecordMerge
+      setPendingRecordMerge(null)
+      void mergeRecordedBlocks(capture)
+    }
+  })
+
+  useSocketEvent(IPC.RUNS_STATUS_CHANGED, (data) => {
+    const event = data as { runId: string; status: string }
+    if (
+      pendingRecordMerge?.kind === 'state-capture' &&
+      event.runId === pendingRecordMerge.runId &&
+      (event.status === 'passed' || event.status === 'failed' || event.status === 'cancelled')
+    ) {
+      const capture = pendingRecordMerge
+      setPendingRecordMerge(null)
+      void launchCodegenAfterStateCapture(capture)
+    }
   })
 
   // Close context menu on outside click
@@ -249,6 +289,172 @@ export function ExplorerPage(): JSX.Element {
     const result = await api.invoke<string>(IPC.RUNS_START, request)
     const envelope = result as IpcEnvelope<string>
     if (envelope.payload) navigate(`/project/${projectId}/runs/${envelope.payload}`)
+  }
+
+  // Returns a single-browser selection using the first configured Playwright project,
+  // falling back to 'all' if the config can't be read.
+  const getSingleBrowser = async (pid: string): Promise<RunRequest['browser']> => {
+    const env = await api.invoke<ProjectConfigSummary>(IPC.HEALTH_GET_CONFIG, { projectId: pid })
+    const firstProject = (env as IpcEnvelope<ProjectConfigSummary>).payload?.projects?.[0]
+    return firstProject ? { mode: 'single', projectName: firstProject } : { mode: 'all' }
+  }
+
+  const handleDebugRun = async (node: ExplorerNode): Promise<void> => {
+    if (!projectId) return
+    const browser = await getSingleBrowser(projectId)
+    const request: RunRequest = {
+      projectId,
+      targetPath: (node.type === 'testFile' || node.type === 'directory' || node.type === 'file') ? node.path : undefined,
+      testTitleFilter: node.type === 'testCase' ? node.testTitle : undefined,
+      browser,
+      headed: true,
+      debug: true,
+      streamLogs: true,
+    }
+    const result = await api.invoke<string>(IPC.RUNS_START, request)
+    const envelope = result as IpcEnvelope<string>
+    if (envelope.payload) navigate(`/project/${projectId}/runs/${envelope.payload}`)
+  }
+
+  const mergeRecordedBlocks = async ({
+    doc,
+    tempOutputPath,
+    isCreate,
+  }: {
+    doc: TestEditorDocument
+    tempOutputPath: string
+    isCreate: boolean
+    kind: 'codegen'
+  }): Promise<void> => {
+    if (!projectId) return
+
+    if (isCreate) {
+      // For create mode the recorded file IS the target; just refresh the tree
+      void fetchTree()
+      return
+    }
+
+    // Dry-run: parse the recorded output to get new blocks, then show review dialog
+    const result = await api.invoke<{ merged: boolean; newBlocks: TestBlock[] }>(IPC.RUNS_MERGE_RECORDED, {
+      runId: 'codegen',
+      outputPath: tempOutputPath,
+      document: doc,
+      projectId,
+      mode: 'dry',
+    })
+    const envelope = result as IpcEnvelope<{ merged: boolean; newBlocks: TestBlock[] }>
+    const newBlocks = envelope.payload?.newBlocks ?? []
+
+    setMergeReview({ doc, newBlocks, tempOutputPath, isCreate })
+  }
+
+  const launchCodegenAfterStateCapture = async ({
+    doc,
+    runId: pendingRunId,
+    tempFile,
+    storageStatePath,
+    outputPath,
+    browser,
+  }: {
+    doc: TestEditorDocument
+    runId: string
+    tempFile: string
+    storageStatePath: string
+    outputPath: string
+    browser: string
+    kind: 'state-capture'
+  }): Promise<void> => {
+    if (!projectId) return
+
+    // Clean up temp file and read last URL from meta — all done server-side
+    const metaEnv = await api.invoke<{ lastUrl: string | null; storageStatePath: string }>(
+      IPC.RUNS_GET_CAPTURE_META,
+      { runId: pendingRunId, tempFile, storageStatePath }
+    )
+    const meta = (metaEnv as IpcEnvelope<{ lastUrl: string | null; storageStatePath: string }>).payload
+    const lastUrl = meta?.lastUrl ?? undefined
+    const resolvedStorageStatePath = meta?.storageStatePath ?? storageStatePath
+
+    // Write the existing blocks as prelude so codegen appends new steps after them
+    const preludeCode = `import { test, expect } from '@playwright/test'\n\n${doc.code}\n`
+
+    await api.invoke(IPC.RECORDER_START, {
+      projectId,
+      startUrl: lastUrl || undefined,
+      browser: browser || undefined,
+      outputPath,
+      preludeCode,
+      storageState: resolvedStorageStatePath,
+    })
+
+    setPendingRecordMerge({ kind: 'codegen', doc, tempOutputPath: outputPath, isCreate: false })
+  }
+
+  const handleRecordMore = async (
+    doc: TestEditorDocument,
+    opts: { startUrl: string; browser: string; outputPath: string }
+  ): Promise<void> => {
+    if (!projectId) return
+
+    if (doc.mode === 'existing') {
+      // Phase 1: run existing steps headlessly to capture browser state (cookies, localStorage, current URL)
+      const outputPath = doc.filePath.replace(/(\.[^.]+)$/, '.codegen-tmp$1')
+      const result = await api.invoke<{ runId: string; tempFile: string; storageStatePath: string }>(
+        IPC.RUNS_START_PAUSE_RECORD,
+        { projectId, document: doc, outputPath }
+      )
+      const envelope = result as IpcEnvelope<{ runId: string; tempFile: string; storageStatePath: string }>
+      if (envelope.error) {
+        throw new Error(`${envelope.error.code}: ${envelope.error.message}`)
+      }
+      const { runId, tempFile, storageStatePath } = envelope.payload ?? {}
+      if (runId && tempFile && storageStatePath) {
+        setPendingRecordMerge({ kind: 'state-capture', doc, runId, tempFile, storageStatePath, outputPath, browser: opts.browser })
+      }
+      return
+    }
+
+    // Create mode: launch codegen directly with a pre-seeded output file
+    const outputPath = opts.outputPath
+    const preludeCode = `import { test, expect } from '@playwright/test'\n\n${doc.code}\n`
+
+    await api.invoke(IPC.RECORDER_START, {
+      projectId,
+      startUrl: opts.startUrl || undefined,
+      browser: opts.browser,
+      outputPath,
+      preludeCode,
+    })
+
+    setPendingRecordMerge({ kind: 'codegen', doc, tempOutputPath: outputPath, isCreate: true })
+  }
+
+  const confirmMerge = async (mode: 'append' | 'replace'): Promise<void> => {
+    if (!mergeReview || !projectId) return
+    const { doc, tempOutputPath } = mergeReview
+    setMergeReview(null)
+    await api.invoke(IPC.RUNS_MERGE_RECORDED, {
+      runId: 'codegen',
+      outputPath: tempOutputPath,
+      document: doc,
+      projectId,
+      mode,
+    })
+    setEditorReloadKey((k) => k + 1)
+    void fetchTree()
+  }
+
+  const cancelMerge = async (): Promise<void> => {
+    if (!mergeReview || !projectId) return
+    const { tempOutputPath, doc } = mergeReview
+    setMergeReview(null)
+    await api.invoke(IPC.RUNS_MERGE_RECORDED, {
+      runId: 'codegen',
+      outputPath: tempOutputPath,
+      document: doc,
+      projectId,
+      mode: 'discard',
+    })
   }
 
   const handleCreateFile = async (): Promise<void> => {
@@ -451,11 +657,13 @@ export function ExplorerPage(): JSX.Element {
             {selectedNode.type === 'testCase' ? (
               selectedNode.testCaseRef ? (
                 <TestBlockEditor
+                  key={editorReloadKey}
                   projectId={projectId}
                   mode="existing"
                   filePath={selectedNode.path}
                   testCaseRef={selectedNode.testCaseRef}
                   onRun={() => void handleQuickRun(selectedNode)}
+                  onDebug={() => void handleDebugRun(selectedNode)}
                   onRunWithOptions={() => {
                     setRunDialog({
                       targetPath: selectedNode.path,
@@ -466,6 +674,7 @@ export function ExplorerPage(): JSX.Element {
                   onSaved={(savedDocument) => {
                     void handleTestEditorSaved(savedDocument)
                   }}
+                  onRecordMore={(doc, opts) => handleRecordMore(doc, opts)}
                 />
               ) : (
                 <div className="detail-warning">This test could not be opened in the visual editor because it has no stable test reference yet.</div>
@@ -479,6 +688,7 @@ export function ExplorerPage(): JSX.Element {
                 onSaved={(savedDocument) => {
                   void handleTestEditorSaved(savedDocument)
                 }}
+                onRecordMore={(doc, opts) => handleRecordMore(doc, opts)}
               />
             ) : (selectedNode.type === 'testFile' || selectedNode.type === 'file') ? (
               <>
@@ -661,6 +871,49 @@ export function ExplorerPage(): JSX.Element {
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {mergeReview && (
+        <div className="modal-overlay">
+          <div className="modal merge-review-dialog">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Recording complete</h3>
+              <button className="btn-icon" onClick={() => void cancelMerge()}>{'\u2715'}</button>
+            </div>
+            {mergeReview.newBlocks.length === 0 ? (
+              <p style={{ color: 'var(--text-2)', marginBottom: 16 }}>No new steps were recorded.</p>
+            ) : (
+              <>
+                <p style={{ marginBottom: 8, fontSize: 13 }}>
+                  {mergeReview.newBlocks.length} new step{mergeReview.newBlocks.length !== 1 ? 's' : ''} recorded:
+                </p>
+                <ul className="merge-review-list">
+                  {mergeReview.newBlocks.map((b, i) => (
+                    <li key={b.id ?? i} className="merge-review-item">
+                      <span className="merge-review-type">{b.kind}</span>
+                      <span className="merge-review-comment"> — {b.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => void cancelMerge()}>
+                Discard
+              </button>
+              {mergeReview.newBlocks.length > 0 && (
+                <>
+                  <button className="btn btn-secondary btn-sm" onClick={() => void confirmMerge('replace')}>
+                    Replace test
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={() => void confirmMerge('append')}>
+                    Add to test
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

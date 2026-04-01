@@ -19,6 +19,7 @@ import { settingsRoutes } from './settings'
 import { testEditorRoutes } from './testEditor'
 import { blockLibraryRoutes } from './blockLibrary'
 import { pluginRoutes } from './plugins'
+import { suiteRoutes } from './suites'
 
 export const allRoutes: RouteDefinition[] = [
   ...projectRoutes,
@@ -38,6 +39,7 @@ export const allRoutes: RouteDefinition[] = [
   ...testEditorRoutes,
   ...blockLibraryRoutes,
   ...pluginRoutes,
+  ...suiteRoutes,
 ]
 
 export function registerAllRoutes(app: Express | Router, services: ServiceContainer): RouteDefinition[] {

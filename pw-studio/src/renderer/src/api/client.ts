@@ -321,6 +321,41 @@ const channelMap: Record<string, RouteSpec> = {
       b: getRequiredString(payload, 'runIdB'),
     }),
   },
+  [IPC.RUNS_MERGE_RECORDED]: {
+    method: 'POST',
+    path: (payload) =>
+      buildPath(API_ROUTES.RUNS_MERGE_RECORDED, { runId: getRequiredString(payload, 'runId') }),
+    body: (payload) => ({
+      outputPath: payload['outputPath'],
+      document: payload['document'],
+      projectId: payload['projectId'],
+      mode: payload['mode'],
+    }),
+  },
+  [IPC.RUNS_GET_CAPTURE_META]: {
+    method: 'POST',
+    path: (payload) =>
+      buildPath(API_ROUTES.RUNS_GET_CAPTURE_META, { runId: getRequiredString(payload, 'runId') }),
+    body: (payload) => ({
+      tempFile: payload['tempFile'],
+      storageStatePath: payload['storageStatePath'],
+    }),
+  },
+  [IPC.RUNS_GET_RECORDED_SNIPPET]: {
+    method: 'GET',
+    path: (payload) =>
+      buildPath(API_ROUTES.RUNS_GET_RECORDED_SNIPPET, { runId: getRequiredString(payload, 'runId') }),
+  },
+  [IPC.RUNS_START_PAUSE_RECORD]: {
+    method: 'POST',
+    path: (payload) =>
+      buildPath(API_ROUTES.RUNS_START_PAUSE_RECORD, { id: getRequiredString(payload, 'projectId') }),
+    body: (payload) => ({
+      document: payload['document'],
+      browser: payload['browser'],
+      outputPath: payload['outputPath'],
+    }),
+  },
   [IPC.ARTIFACTS_OPEN]: {
     method: 'POST',
     path: API_ROUTES.ARTIFACTS_OPEN,
@@ -398,6 +433,8 @@ const channelMap: Record<string, RouteSpec> = {
       startUrl: payload['startUrl'],
       outputPath: payload['outputPath'],
       browser: payload['browser'],
+      preludeCode: payload['preludeCode'],
+      storageState: payload['storageState'],
     }),
   },
   [IPC.RECORDER_STOP]: {
@@ -445,6 +482,47 @@ const channelMap: Record<string, RouteSpec> = {
     method: 'GET',
     path: (payload) =>
       buildPath(API_ROUTES.DASHBOARD_GET_STATS, { id: getRequiredString(payload, 'projectId') }),
+  },
+  [IPC.SUITES_LIST]: {
+    method: 'GET',
+    path: (payload) =>
+      buildPath(API_ROUTES.SUITES_LIST, { id: getRequiredString(payload, 'projectId') }),
+  },
+  [IPC.SUITES_CREATE]: {
+    method: 'POST',
+    path: (payload) =>
+      buildPath(API_ROUTES.SUITES_CREATE, { id: getRequiredString(payload, 'projectId') }),
+    body: (payload) => ({ name: payload['name'] }),
+  },
+  [IPC.SUITES_UPDATE]: {
+    method: 'PUT',
+    path: (payload) =>
+      buildPath(API_ROUTES.SUITES_UPDATE, {
+        id: getRequiredString(payload, 'projectId'),
+        suiteId: getRequiredString(payload, 'suiteId'),
+      }),
+    body: (payload) => {
+      const b: Record<string, unknown> = {}
+      if (payload['name'] !== undefined) b['name'] = payload['name']
+      if (payload['entries'] !== undefined) b['entries'] = payload['entries']
+      return b
+    },
+  },
+  [IPC.SUITES_DELETE]: {
+    method: 'DELETE',
+    path: (payload) =>
+      buildPath(API_ROUTES.SUITES_DELETE, {
+        id: getRequiredString(payload, 'projectId'),
+        suiteId: getRequiredString(payload, 'suiteId'),
+      }),
+  },
+  [IPC.SUITES_RUN]: {
+    method: 'POST',
+    path: (payload) =>
+      buildPath(API_ROUTES.SUITES_RUN, {
+        id: getRequiredString(payload, 'projectId'),
+        suiteId: getRequiredString(payload, 'suiteId'),
+      }),
   },
   [IPC.SETTINGS_GET_APP_INFO]: {
     method: 'GET',
