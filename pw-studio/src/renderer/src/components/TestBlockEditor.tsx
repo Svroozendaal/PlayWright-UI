@@ -194,7 +194,7 @@ export function TestBlockEditor({
   const [recording, setRecording] = useState(false)
   const [running, setRunning] = useState(false)
   const [blockErrorPopup, setBlockErrorPopup] = useState<string | null>(null)
-  const [lastRunReportPath, setLastRunReportPath] = useState<string | null>(null)
+  const [lastRunId, setLastRunId] = useState<string | null>(null)
 
   const fetchLastRunError = useCallback(async (
     doc: TestEditorDocument,
@@ -220,8 +220,8 @@ export function TestBlockEditor({
 
       if (!match) continue
 
-      // Found the most recent run containing this test — store its report path
-      setLastRunReportPath(run.reportPath ?? null)
+      // Found the most recent run containing this test — store its id for the report button
+      setLastRunId(run.reportPath ? run.id : null)
 
       if (match.status === 'failed' && match.errorMessage) {
         const errorLine = parseErrorLineNumber(match.errorMessage)
@@ -240,7 +240,7 @@ export function TestBlockEditor({
       return
     }
 
-    setLastRunReportPath(null)
+    setLastRunId(null)
     setBlockErrors({})
   }, [projectId, snippetStartLine])
 
@@ -578,11 +578,11 @@ export function TestBlockEditor({
               {recording ? 'Recording...' : 'Record...'}
             </button>
           )}
-          {mode === 'existing' && lastRunReportPath && (
+          {mode === 'existing' && lastRunId && (
             <button
               className="btn btn-secondary btn-sm"
               title="Open Playwright HTML report"
-              onClick={() => void api.invoke(IPC.ARTIFACTS_OPEN_REPORT, { reportPath: lastRunReportPath })}
+              onClick={() => void api.invoke(IPC.ARTIFACTS_OPEN_REPORT, { runId: lastRunId })}
             >
               <UiIcon name="grid" />
               Report
