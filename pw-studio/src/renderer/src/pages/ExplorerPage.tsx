@@ -23,6 +23,7 @@ import { UiIcon } from '../components/UiIcon'
 
 type ContextMenuState = { x: number; y: number; node: ExplorerNode } | null
 type DetailTab = 'code' | 'info'
+type RenameState = { node: ExplorerNode; value: string } | null
 
 const NEW_TEST_TEMPLATE = `import { test, expect } from '@playwright/test'
 
@@ -96,6 +97,39 @@ function testStatusColor(testTitle: string | undefined, lastResults: TestStatusM
   return '#94a3b8'
 }
 
+function RenameInput({ name, onRename }: { name: string; onRename: (n: string) => Promise<void> }): JSX.Element {
+  const [value, setValue] = useState(name)
+  const [saving, setSaving] = useState(false)
+  const isDirty = value !== name
+
+  const save = async (): Promise<void> => {
+    if (!isDirty || saving) return
+    setSaving(true)
+    await onRename(value)
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+      <input
+        className="bed-title-input"
+        style={{ fontSize: 16, fontWeight: 600, flex: 1 }}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void save()
+          if (e.key === 'Escape') setValue(name)
+        }}
+        onBlur={() => void save()}
+      />
+      {isDirty && !saving && (
+        <button className="btn btn-primary btn-sm" onClick={() => void save()}>Rename</button>
+      )}
+      {saving && <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Saving…</span>}
+    </div>
+  )
+}
+
 export function ExplorerPage(): JSX.Element {
   const { id: projectId } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -124,6 +158,13 @@ export function ExplorerPage(): JSX.Element {
   const [creatingIn, setCreatingIn] = useState<{ parentPath: string; type: 'file' | 'folder' } | null>(null)
   const [newName, setNewName] = useState('')
   const newNameRef = useRef<HTMLInputElement>(null)
+
+  // Rename state
+  const [renaming, setRenaming] = useState<RenameState>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+
+  // Delete confirmation state
+  const [deleteTarget, setDeleteTarget] = useState<ExplorerNode | null>(null)
 
   // Pending record merge state — set when codegen or state-capture is running from block editor
   const [pendingRecordMerge, setPendingRecordMerge] = useState<
@@ -210,6 +251,14 @@ export function ExplorerPage(): JSX.Element {
     if (creatingIn && newNameRef.current) newNameRef.current.focus()
   }, [creatingIn])
 
+  // Focus rename input
+  useEffect(() => {
+    if (renaming && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
+    }
+  }, [renaming])
+
   // Keyboard: Ctrl+S to save, F5 to run, Escape to close
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
@@ -225,12 +274,14 @@ export function ExplorerPage(): JSX.Element {
         setContextMenu(null)
         setRunDialog(null)
         if (creatingIn) setCreatingIn(null)
+        if (renaming) setRenaming(null)
+        if (deleteTarget) setDeleteTarget(null)
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEditing, isDirty, selectedNode, creatingIn])
+  }, [isEditing, isDirty, selectedNode, creatingIn, renaming, deleteTarget])
 
   // Load file content when a file is selected
   useEffect(() => {
@@ -464,7 +515,7 @@ export function ExplorerPage(): JSX.Element {
       ? `${newName}.spec.ts`
       : newName
 
-    const filePath = `${creatingIn.parentPath}/${name}`
+    const filePath = creatingIn.parentPath ? `${creatingIn.parentPath}/${name}` : name
     await api.invoke(IPC.FILE_CREATE, {
       projectId,
       filePath,
@@ -498,6 +549,33 @@ export function ExplorerPage(): JSX.Element {
     await fetchTree()
     await fetchLastResults()
     setLoading(false)
+  }
+
+  const handleDeleteConfirmed = async (): Promise<void> => {
+    if (!deleteTarget || !projectId) return
+    const node = deleteTarget
+    setDeleteTarget(null)
+    await api.invoke(IPC.FILE_DELETE, { projectId, filePath: node.path })
+    if (selectedNode?.path === node.path) {
+      setSelectedNode(null)
+      setFileContent(null)
+      setEditContent(null)
+    }
+    await api.invoke(IPC.EXPLORER_REFRESH, { projectId })
+    await fetchTree()
+  }
+
+  const handleRenameCommit = async (): Promise<void> => {
+    if (!renaming || !projectId || !renaming.value.trim()) { setRenaming(null); return }
+    const { node, value } = renaming
+    setRenaming(null)
+    const result = await api.invoke<{ newPath: string }>(IPC.FILE_RENAME, { projectId, filePath: node.path, newName: value.trim() })
+    const envelope = result as IpcEnvelope<{ newPath: string }>
+    if (selectedNode?.path === node.path && envelope.payload?.newPath) {
+      setSelectedNode({ ...selectedNode, path: envelope.payload.newPath, name: value.trim() })
+    }
+    await api.invoke(IPC.EXPLORER_REFRESH, { projectId })
+    await fetchTree()
   }
 
   const openCreateTestEditor = (node: ExplorerNode): void => {
@@ -552,6 +630,7 @@ export function ExplorerPage(): JSX.Element {
     const hasChildren = node.children && node.children.length > 0
     const isExpandable = node.type === 'directory' || node.type === 'testFile'
     const isSelected = selectedNode?.id === node.id
+    const isRenaming = renaming?.node.id === node.id
 
     return (
       <div key={node.id}>
@@ -559,6 +638,7 @@ export function ExplorerPage(): JSX.Element {
           className={`tree-node ${isSelected ? 'selected' : ''}`}
           style={{ paddingLeft: 8 + depth * 18 }}
           onClick={() => {
+            if (isRenaming) return
             if (isExpandable) toggleExpand(node.id)
             setSelectedNode(node)
             setCreateTestFilePath(null)
@@ -572,22 +652,40 @@ export function ExplorerPage(): JSX.Element {
           <span className="tree-node-icon" style={{ color: nodeIconColor(node, lastResults) }}>
             {nodeIcon(node, isExpanded)}
           </span>
-          <span className="tree-node-name">{node.name}</span>
-          {node.type === 'testCase' && (
-            <span style={{ color: testStatusColor(node.testTitle, lastResults), fontSize: 11, marginLeft: 4 }}>
-              {testStatusIndicator(node.testTitle, lastResults)}
-            </span>
+          {isRenaming ? (
+            <input
+              ref={renameInputRef}
+              className="tree-rename-input"
+              value={renaming.value}
+              onChange={(e) => setRenaming({ ...renaming, value: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); void handleRenameCommit() }
+                if (e.key === 'Escape') setRenaming(null)
+              }}
+              onBlur={() => void handleRenameCommit()}
+              onClick={(e) => e.stopPropagation()}
+              style={{ fontSize: 13, flex: 1, minWidth: 0 }}
+            />
+          ) : (
+            <>
+              <span className="tree-node-name">{node.name}</span>
+              {node.type === 'testCase' && (
+                <span style={{ color: testStatusColor(node.testTitle, lastResults), fontSize: 11, marginLeft: 4 }}>
+                  {testStatusIndicator(node.testTitle, lastResults)}
+                </span>
+              )}
+              {node.parseState === 'warning' && (
+                <span className="tree-node-warning" title={node.parseWarning}>{'\u26A0'}</span>
+              )}
+              <button
+                className="tree-run-btn"
+                title="Run"
+                onClick={(e) => { e.stopPropagation(); handleQuickRun(node) }}
+              >
+                {'\u25B6'}
+              </button>
+            </>
           )}
-          {node.parseState === 'warning' && (
-            <span className="tree-node-warning" title={node.parseWarning}>{'\u26A0'}</span>
-          )}
-          <button
-            className="tree-run-btn"
-            title="Run"
-            onClick={(e) => { e.stopPropagation(); handleQuickRun(node) }}
-          >
-            {'\u25B6'}
-          </button>
         </div>
         {isExpanded && hasChildren && (
           <div>{node.children!.map((child) => renderNode(child, depth + 1))}</div>
@@ -612,6 +710,12 @@ export function ExplorerPage(): JSX.Element {
               <button className="search-clear" onClick={() => setSearchFilter('')}><UiIcon name="close" /></button>
             )}
           </div>
+          <button className="btn-icon" title="New folder" onClick={() => {
+            setCreatingIn({ parentPath: '', type: 'folder' })
+            setNewName('')
+          }}>
+            <UiIcon name="folder" />
+          </button>
           <button className="btn-icon" onClick={handleRefresh} disabled={loading} title="Refresh">
             <UiIcon name="refresh" />
           </button>
@@ -663,8 +767,29 @@ export function ExplorerPage(): JSX.Element {
                   mode="existing"
                   filePath={selectedNode.path}
                   testCaseRef={selectedNode.testCaseRef}
-                  onRun={() => void handleQuickRun(selectedNode)}
-                  onDebug={() => void handleDebugRun(selectedNode)}
+                  onRun={async () => {
+                    const browser = await getSingleBrowser(projectId)
+                    await api.invoke(IPC.RUNS_START, {
+                      projectId,
+                      targetPath: selectedNode.path,
+                      testTitleFilter: selectedNode.testTitle,
+                      browser,
+                      headed: false,
+                      streamLogs: true,
+                    } as RunRequest)
+                  }}
+                  onDebug={async () => {
+                    const browser = await getSingleBrowser(projectId)
+                    await api.invoke(IPC.RUNS_START, {
+                      projectId,
+                      targetPath: selectedNode.path,
+                      testTitleFilter: selectedNode.testTitle,
+                      browser,
+                      headed: true,
+                      debug: true,
+                      streamLogs: true,
+                    } as RunRequest)
+                  }}
                   onRunWithOptions={() => {
                     setRunDialog({
                       targetPath: selectedNode.path,
@@ -755,9 +880,21 @@ export function ExplorerPage(): JSX.Element {
                 {detailTab === 'info' && (
                   <div className="detail-info-content">
                     <div className="detail-file-info">
-                      <h3>{selectedNode.name}</h3>
-                      <p>{selectedNode.path}</p>
-                      <p style={{ marginTop: 4, color: '#94a3b8' }}>
+                      <RenameInput
+                        name={selectedNode.name}
+                        onRename={async (newName) => {
+                          if (!newName.trim() || newName === selectedNode.name) return
+                          await api.invoke(IPC.FILE_RENAME, {
+                            projectId,
+                            filePath: selectedNode.path,
+                            newName: newName.trim(),
+                          })
+                          await api.invoke(IPC.EXPLORER_REFRESH, { projectId })
+                          await fetchTree()
+                        }}
+                      />
+                      <p style={{ marginTop: 4, color: '#94a3b8', fontSize: 12 }}>{selectedNode.path}</p>
+                      <p style={{ marginTop: 4, color: '#94a3b8', fontSize: 12 }}>
                         Type: {selectedNode.type}
                         {fileMeta && (
                           <> &middot; {Math.round(fileMeta.size / 1024)}KB &middot; Modified: {new Date(fileMeta.lastModified).toLocaleString()}</>
@@ -822,6 +959,19 @@ export function ExplorerPage(): JSX.Element {
               }}>
                 New folder
               </button>
+              <div className="context-menu-divider" />
+              <button className="context-menu-item" onClick={() => {
+                setContextMenu(null)
+                setRenaming({ node: contextMenu.node, value: contextMenu.node.name })
+              }}>
+                Rename
+              </button>
+              <button className="context-menu-item context-menu-item--danger" onClick={() => {
+                setContextMenu(null)
+                setDeleteTarget(contextMenu.node)
+              }}>
+                Delete folder
+              </button>
             </>
           )}
           {(contextMenu.node.type === 'testFile' || contextMenu.node.type === 'file') && (
@@ -853,6 +1003,19 @@ export function ExplorerPage(): JSX.Element {
                   New test with blocks
                 </button>
               )}
+              <div className="context-menu-divider" />
+              <button className="context-menu-item" onClick={() => {
+                setContextMenu(null)
+                setRenaming({ node: contextMenu.node, value: contextMenu.node.name })
+              }}>
+                Rename
+              </button>
+              <button className="context-menu-item context-menu-item--danger" onClick={() => {
+                setContextMenu(null)
+                setDeleteTarget(contextMenu.node)
+              }}>
+                Delete file
+              </button>
             </>
           )}
           {contextMenu.node.type === 'testCase' && (
@@ -872,6 +1035,25 @@ export function ExplorerPage(): JSX.Element {
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 400 }}>
+            <h3 style={{ margin: '0 0 12px' }}>Delete {deleteTarget.type === 'directory' ? 'folder' : 'file'}</h3>
+            <p style={{ color: 'var(--text-2)', marginBottom: 20, fontSize: 13 }}>
+              Are you sure you want to delete <strong>{deleteTarget.name}</strong>?
+              {deleteTarget.type === 'directory' && ' This will delete all contents inside.'}
+              {' '}This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="btn btn-sm" style={{ background: '#ef4444', color: '#fff' }} onClick={() => void handleDeleteConfirmed()}>
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

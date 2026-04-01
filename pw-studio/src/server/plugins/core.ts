@@ -10,7 +10,6 @@ import type {
   TestBlock,
   TestReferenceSpec,
 } from '../../shared/types/ipc'
-import { refineGeneratedCode } from '../services/CodegenRefiner'
 import {
   buildDocumentFromParsedTest,
   parseSnippetToDocument,
@@ -27,26 +26,6 @@ const SUBFLOW_INPUT_NAME = '__pwSubflow'
 const SUBFLOW_DEFAULTS_NAME = '__pwSubflowDefaults'
 
 export function registerCorePluginContributions(runtime: PluginRuntimeService): void {
-  runtime.registerRecorderTransform({
-    id: 'core.codegen-refiner',
-    name: 'Core Codegen Refiner',
-    transform: (input) => {
-      const refined = refineGeneratedCode(input.content, {
-        outputPath: input.outputPath,
-        startUrl: input.startUrl,
-        browser: input.browser,
-      })
-
-      return {
-        content: refined.content,
-        testTitle: refined.testTitle,
-        appliedChanges: refined.appliedChanges,
-        extractions: refined.extractions,
-        suggestions: refined.suggestions,
-      }
-    },
-  })
-
   for (const definition of coreBlockDefinitions) {
     runtime.registerBlockDefinition(definition)
   }

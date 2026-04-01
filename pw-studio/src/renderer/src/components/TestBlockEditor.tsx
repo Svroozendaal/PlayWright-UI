@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { IPC } from '../../../shared/types/ipc'
 import type {
   AvailableTestCase,
@@ -69,8 +68,13 @@ function findSnippetStartLine(fileContent: string, testTitle: string): number {
 
 /**
  * Build a map of blockId → { start, end } line numbers (1-based, relative to
- * the rendered snippet string). Blocks appear in the snippet body sequentially.
- * Each block's code is found by splitting the snippet and matching regions.
+ * the rendered snippet string).
+ *
+ * Every block renderer appends ` // <title>` to its last line (via
+ * renderTitleComment). We use that as an anchor: scan forward from the
+ * previous block's end to find the line that ends with ` // <title>`, which
+ * marks the last line of the block. This correctly handles multi-line blocks
+ * like subflows that expand to many lines.
  */
 function computeBlockLineMap(
   snippetCode: string,
@@ -78,34 +82,31 @@ function computeBlockLineMap(
 ): Record<string, { start: number; end: number }> {
   const snippetLines = snippetCode.split('\n')
   const map: Record<string, { start: number; end: number }> = {}
-  let searchFromLine = 0 // 0-based index into snippetLines
+  // Line 0 (0-based) of the snippet is `test('...', async ({page}) => {`
+  // Body starts at line 1 (0-based) = line 2 (1-based).
+  // findBlockAtLine computes relativeLine = absoluteErrorLine - snippetStartLine
+  // where snippetStartLine points to the test() call line.
+  // So relativeLine=1 means the first body line = snippetLines[1].
+  // We start searchFromLine at 1 to skip the test() wrapper line.
+  let searchFromLine = 1 // 0-based index into snippetLines, skip test() header
 
   for (const block of blocks) {
-    // Find the block's rendered code by looking for its title comment or any
-    // unique first-line. We search forward from the previous block's end.
-    // Since we don't have the rendered code per-block on the frontend, we use
-    // the block title as a heuristic anchor: the AST renderer emits
-    // `// <title>` as a comment line for raw_code blocks, and definitions
-    // render their own output. For non-raw blocks the title won't appear in
-    // code, so we assign each block an equal share of the remaining body lines.
-    const remaining = blocks.slice(blocks.indexOf(block))
-    const linesLeft = snippetLines.length - searchFromLine
-    const share = Math.max(1, Math.floor(linesLeft / remaining.length))
+    const startLine = searchFromLine + 1 // 1-based, block starts right after previous
+    const titleSuffix = `// ${block.title.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim()}`
 
-    // Try to find a title-comment anchor first (works for raw_code blocks)
-    let foundAt = -1
-    const titleComment = `// ${block.title}`
+    // Search forward for the line ending with the title comment
+    let endIdx = -1
     for (let i = searchFromLine; i < snippetLines.length; i++) {
-      if ((snippetLines[i] ?? '').trim() === titleComment.trim()) {
-        foundAt = i
+      const line = (snippetLines[i] ?? '').trimEnd()
+      if (line.endsWith(titleSuffix)) {
+        endIdx = i
         break
       }
     }
 
-    const startLine = (foundAt >= 0 ? foundAt : searchFromLine) + 1 // 1-based
-    const endLine = Math.min(startLine + share - 1, snippetLines.length)
+    const endLine = endIdx >= 0 ? endIdx + 1 : startLine // 1-based
     map[block.id] = { start: startLine, end: endLine }
-    searchFromLine = endLine // next block starts after this one
+    searchFromLine = endIdx >= 0 ? endIdx + 1 : searchFromLine + 1
   }
 
   return map
@@ -146,9 +147,9 @@ type TestBlockEditorProps = {
   testCaseRef?: TestCaseRef
   onSaved: (document: TestEditorDocument) => void
   onCancelCreate?: () => void
-  onRun?: () => void
+  onRun?: () => Promise<void>
   onRunWithOptions?: () => void
-  onDebug?: () => void
+  onDebug?: () => Promise<void>
   onRecordMore?: (doc: TestEditorDocument, opts: { startUrl: string; browser: string; outputPath: string }) => Promise<void>
 }
 
@@ -164,7 +165,6 @@ export function TestBlockEditor({
   onDebug,
   onRecordMore,
 }: TestBlockEditorProps): JSX.Element {
-  const navigate = useNavigate()
   const [document, setDocument] = useState<TestEditorDocument | null>(null)
   const [savedDocument, setSavedDocument] = useState<TestEditorDocument | null>(null)
   const [codeDraft, setCodeDraft] = useState('')
@@ -192,6 +192,9 @@ export function TestBlockEditor({
   const [recordBrowser, setRecordBrowser] = useState('chromium')
   const [recordOutputPath, setRecordOutputPath] = useState('')
   const [recording, setRecording] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [blockErrorPopup, setBlockErrorPopup] = useState<string | null>(null)
+  const [lastRunReportPath, setLastRunReportPath] = useState<string | null>(null)
 
   const fetchLastRunError = useCallback(async (
     doc: TestEditorDocument,
@@ -200,39 +203,52 @@ export function TestBlockEditor({
     const startLine = overrideSnippetStartLine ?? snippetStartLine
     const runsEnv = await api.invoke<RunRecord[]>(IPC.RUNS_LIST, { projectId })
     const runs = (runsEnv as IpcEnvelope<RunRecord[]>).payload ?? []
-    const normFilePath = doc.filePath.replace(/\\/g, '/')
-    const failedRun = runs.find(
-      (r) =>
-        r.status === 'failed' &&
-        r.targetPath != null &&
-        normFilePath.includes(r.targetPath.replace(/\\/g, '/'))
-    )
-    if (!failedRun) {
+
+    // Find the most recent run that contains results for this test title
+    // (runs are already ordered by startedAt DESC from the server)
+    for (const run of runs) {
+      // Skip runs that clearly belong to a different file
+      if (run.targetPath) {
+        const normTarget = run.targetPath.replace(/\\/g, '/')
+        const normFile = doc.filePath.replace(/\\/g, '/')
+        if (!normTarget.includes(normFile) && !normFile.includes(normTarget)) continue
+      }
+
+      const resultsEnv = await api.invoke<TestResultRecord[]>(IPC.RUNS_GET_TEST_RESULTS, { runId: run.id })
+      const results = (resultsEnv as IpcEnvelope<TestResultRecord[]>).payload ?? []
+      const match = results.find((r) => r.testTitle === doc.testTitle)
+
+      if (!match) continue
+
+      // Found the most recent run containing this test — store its report path
+      setLastRunReportPath(run.reportPath ?? null)
+
+      if (match.status === 'failed' && match.errorMessage) {
+        const errorLine = parseErrorLineNumber(match.errorMessage)
+        const blockLineMap = computeBlockLineMap(doc.code, doc.blocks)
+        const blockId = errorLine
+          ? findBlockAtLine(errorLine, startLine, blockLineMap)
+          : null
+        const fallbackId = blockId ?? Object.keys(blockLineMap).at(-1) ?? null
+        if (fallbackId) {
+          setBlockErrors({ [fallbackId]: match.errorMessage })
+          return
+        }
+      }
+
       setBlockErrors({})
       return
     }
-    const resultsEnv = await api.invoke<TestResultRecord[]>(IPC.RUNS_GET_TEST_RESULTS, { runId: failedRun.id })
-    const results = (resultsEnv as IpcEnvelope<TestResultRecord[]>).payload ?? []
-    const failed = results.find((r) => r.testTitle === doc.testTitle && r.status === 'failed')
-    if (!failed?.errorMessage) {
-      setBlockErrors({})
-      return
-    }
-    const errorLine = parseErrorLineNumber(failed.errorMessage)
-    if (!errorLine) {
-      setBlockErrors({})
-      return
-    }
-    const blockLineMap = computeBlockLineMap(doc.code, doc.blocks)
-    const blockId = findBlockAtLine(errorLine, startLine, blockLineMap)
-    if (blockId) {
-      setBlockErrors({ [blockId]: failed.errorMessage })
-    } else {
-      setBlockErrors({})
-    }
+
+    setLastRunReportPath(null)
+    setBlockErrors({})
   }, [projectId, snippetStartLine])
 
-  useSocketEvent(IPC.RUNS_STATUS_CHANGED, () => {
+  useSocketEvent(IPC.RUNS_STATUS_CHANGED, (data) => {
+    const event = data as { status: string }
+    if (event.status === 'passed' || event.status === 'failed' || event.status === 'cancelled') {
+      setRunning(false)
+    }
     if (document) void fetchLastRunError(document)
   })
 
@@ -303,7 +319,7 @@ export function TestBlockEditor({
 
         // Compute snippet start line by reading the actual file
         if (mode === 'existing') {
-          const fileEnv = await api.invoke<FileReadResult>(IPC.FILE_READ, { path: doc.filePath })
+          const fileEnv = await api.invoke<FileReadResult>(IPC.FILE_READ, { projectId, filePath: doc.filePath })
           if (!cancelled) {
             const fileContent = (fileEnv as IpcEnvelope<FileReadResult>).payload?.content ?? doc.code
             const startLine = findSnippetStartLine(fileContent, doc.testTitle)
@@ -533,13 +549,21 @@ export function TestBlockEditor({
 
         <div className="bed-actions">
           {mode === 'existing' && onRun && (
-            <button className="btn btn-primary btn-sm" onClick={onRun}>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={running}
+              onClick={() => { setRunning(true); void onRun().catch(() => setRunning(false)) }}
+            >
               <UiIcon name="play" />
-              Run
+              {running ? 'Running…' : 'Run'}
             </button>
           )}
           {mode === 'existing' && onDebug && (
-            <button className="btn btn-secondary btn-sm" onClick={onDebug}>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={running}
+              onClick={() => { setRunning(true); void onDebug().catch(() => setRunning(false)) }}
+            >
               <UiIcon name="bug" />
               Debug
             </button>
@@ -552,6 +576,16 @@ export function TestBlockEditor({
             >
               <UiIcon name="record" />
               {recording ? 'Recording...' : 'Record...'}
+            </button>
+          )}
+          {mode === 'existing' && lastRunReportPath && (
+            <button
+              className="btn btn-secondary btn-sm"
+              title="Open Playwright HTML report"
+              onClick={() => void api.invoke(IPC.ARTIFACTS_OPEN_REPORT, { reportPath: lastRunReportPath })}
+            >
+              <UiIcon name="grid" />
+              Report
             </button>
           )}
           {mode === 'existing' && onRunWithOptions && (
@@ -710,7 +744,7 @@ export function TestBlockEditor({
                         <div className="bed-node">
                           <div className="bed-node-number">{index + 1}</div>
                           <div
-                            className={`bed-node-card${isSelected ? ' selected' : ''}`}
+                            className={`bed-node-card${isSelected ? ' selected' : ''}${blockErrors[block.id] ? ' has-error' : ''}`}
                             data-cat={category}
                             draggable={!isSelected}
                             onDragStart={(e) => {
@@ -794,17 +828,16 @@ export function TestBlockEditor({
                               </div>
                             )}
 
-                            {/* Error strip — shown when the last run failed at this block */}
+                            {/* Error indicator — shown when the last run failed at this block */}
                             {blockErrors[block.id] && (
-                              <div
-                                className="bed-node-error-strip"
-                                title={blockErrors[block.id]}
+                              <button
+                                className="bed-node-error-btn"
+                                title="View error"
+                                onClick={(e) => { e.stopPropagation(); setBlockErrorPopup(blockErrors[block.id] ?? null) }}
                               >
-                                <span className="bed-node-error-icon"><UiIcon name="close" /></span>
-                                <span className="bed-node-error-text">
-                                  {(blockErrors[block.id] ?? '').split('\n')[0]}
-                                </span>
-                              </div>
+                                <UiIcon name="close" />
+                                &#9432;
+                              </button>
                             )}
                           </div>
                         </div>
@@ -942,6 +975,19 @@ export function TestBlockEditor({
               readOnly={false}
               height="100%"
             />
+          </div>
+        </div>
+      )}
+
+      {/* ===== Block error popup ===== */}
+      {blockErrorPopup && (
+        <div className="modal-overlay" onClick={() => setBlockErrorPopup(null)}>
+          <div className="modal bed-error-popup" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, color: 'var(--red)' }}>Step failed</h3>
+              <button className="btn-icon" onClick={() => setBlockErrorPopup(null)}>{'\u2715'}</button>
+            </div>
+            <pre className="bed-error-popup-body">{blockErrorPopup}</pre>
           </div>
         </div>
       )}

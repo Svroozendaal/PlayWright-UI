@@ -74,7 +74,8 @@
       "Bash(echo \"SERVER:$?\")",
       "Bash(echo \"WEB:$?\")",
       "Bash(tasklist)",
-      "Bash(node_modules/.bin/playwright.cmd codegen:*)"
+      "Bash(node_modules/.bin/playwright.cmd codegen:*)",
+      "Bash(find '/c/Workspaces/PlayWright UI' -type f -path */server/utils/* -name *.ts)"
     ]
   }
 }

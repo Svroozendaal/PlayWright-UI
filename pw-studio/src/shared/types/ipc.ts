@@ -74,6 +74,8 @@ export const API_ROUTES = {
   FILE_READ: '/files/read',
   FILE_WRITE: '/files/write',
   FILE_CREATE: '/files/create',
+  FILE_DELETE: '/files/delete',
+  FILE_RENAME: '/files/rename',
 
   FLAKY_LIST: '/projects/:id/flaky',
   FLAKY_TEST_HISTORY: '/projects/:id/flaky/:testTitle/history',
@@ -183,6 +185,8 @@ export const IPC = {
   FILE_READ: 'file:read',
   FILE_WRITE: 'file:write',
   FILE_CREATE: 'file:create',
+  FILE_DELETE: 'file:delete',
+  FILE_RENAME: 'file:rename',
 
   DASHBOARD_GET_STATS: 'dashboard:getStats',
 

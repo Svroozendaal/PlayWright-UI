@@ -59,4 +59,35 @@ export class FileService {
     }
     fs.mkdirSync(resolved, { recursive: true })
   }
+
+  deleteFile(rootPath: string, filePath: string): void {
+    const resolved = this.validatePath(rootPath, filePath)
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`Path not found: ${filePath}`)
+    }
+    const stat = fs.statSync(resolved)
+    if (stat.isDirectory()) {
+      fs.rmSync(resolved, { recursive: true, force: true })
+    } else {
+      fs.unlinkSync(resolved)
+    }
+  }
+
+  renameFile(rootPath: string, filePath: string, newName: string): string {
+    const resolved = this.validatePath(rootPath, filePath)
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`Path not found: ${filePath}`)
+    }
+    if (newName.includes('/') || newName.includes('\\') || newName === '.' || newName === '..') {
+      throw new Error('Invalid name')
+    }
+    const newPath = path.join(path.dirname(resolved), newName)
+    const newRelative = path.relative(path.resolve(rootPath), newPath)
+    this.validatePath(rootPath, newRelative)
+    if (fs.existsSync(newPath)) {
+      throw new Error(`A file or folder named "${newName}" already exists`)
+    }
+    fs.renameSync(resolved, newPath)
+    return newRelative.replace(/\\/g, '/')
+  }
 }

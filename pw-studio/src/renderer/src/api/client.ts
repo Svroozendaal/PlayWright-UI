@@ -465,6 +465,16 @@ const channelMap: Record<string, RouteSpec> = {
     path: API_ROUTES.FILE_CREATE,
     body: (payload) => payload,
   },
+  [IPC.FILE_DELETE]: {
+    method: 'POST',
+    path: API_ROUTES.FILE_DELETE,
+    body: (payload) => payload,
+  },
+  [IPC.FILE_RENAME]: {
+    method: 'POST',
+    path: API_ROUTES.FILE_RENAME,
+    body: (payload) => payload,
+  },
   [IPC.FLAKY_LIST]: {
     method: 'GET',
     path: (payload) =>

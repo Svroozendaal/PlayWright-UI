@@ -21,6 +21,17 @@ const fileCreateBodySchema = z.object({
   isDirectory: z.boolean().optional(),
 })
 
+const fileDeleteBodySchema = z.object({
+  projectId: z.string().min(1),
+  filePath: z.string().min(1),
+})
+
+const fileRenameBodySchema = z.object({
+  projectId: z.string().min(1),
+  filePath: z.string().min(1),
+  newName: z.string().min(1),
+})
+
 export const fileRoutes: RouteDefinition[] = [
   {
     method: 'post',
@@ -65,6 +76,34 @@ export const fileRoutes: RouteDefinition[] = [
         services.file.createFile(project.rootPath, payload.filePath, payload.content)
       }
       return { success: true }
+    },
+  },
+  {
+    method: 'post',
+    path: API_ROUTES.FILE_DELETE,
+    tags: ['Files'],
+    summary: 'Delete a file or directory inside a project',
+    operationId: 'deleteFile',
+    schemas: { body: fileDeleteBodySchema },
+    handler: ({ services, body }) => {
+      const payload = body as z.infer<typeof fileDeleteBodySchema>
+      const project = getProjectOrThrow(services, payload.projectId)
+      services.file.deleteFile(project.rootPath, payload.filePath)
+      return { success: true }
+    },
+  },
+  {
+    method: 'post',
+    path: API_ROUTES.FILE_RENAME,
+    tags: ['Files'],
+    summary: 'Rename a file or directory inside a project',
+    operationId: 'renameFile',
+    schemas: { body: fileRenameBodySchema },
+    handler: ({ services, body }) => {
+      const payload = body as z.infer<typeof fileRenameBodySchema>
+      const project = getProjectOrThrow(services, payload.projectId)
+      const newPath = services.file.renameFile(project.rootPath, payload.filePath, payload.newName)
+      return { success: true, newPath }
     },
   },
 ]
