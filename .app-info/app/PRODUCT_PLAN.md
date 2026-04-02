@@ -58,3 +58,17 @@ PW Studio v1 is complete when a user can:
 ## Current Shipped Extension
 
 The repo includes a shipped optional Mendix plugin to validate the plugin runtime and block-extension model.
+
+## Phase 8 — Dashboard + Editor UX Overhaul (In Progress)
+
+Currently undergoing UX and design polish:
+
+1. Dashboard redesign with improved summary state
+2. Code editor and block editor enhancements
+3. Project layout and navigation refinement
+4. Error handling and empty state consistency
+5. Explorer, runs, and recorder experience refinement
+6. Carbon Logic design system implementation with dark mode support
+7. Report button and continuous recording features
+8. Suites page for batch test execution
+9. Block editor enhancements: subflows, parameters, and constants blocks

@@ -15,7 +15,7 @@ This file is the entry point for all app-specific data. Read this after `.agents
 | `.app-info/features/` | Feature registry — what the app does | `OVERVIEW.md`, `FEATURES.md` |
 | `.app-info/memory/` | Live agent memory logs | `OVERVIEW.md`, `SESSION_STATE.md`, `DECISIONS_LOG.md`, `PROGRESS.md`, `REVIEW_NOTES.md`, `PROMPT_CHANGES.md`, `INCIDENTS.md` |
 | `.app-info/config/` | Stack, environment, tool versions | `OVERVIEW.md` |
-| `.app-info/agents/` | Agent extensions (optional) | None yet |
+| `.app-info/agents/` | Agent extensions (optional) | `DESIGNER.md`, `DEVELOPER.md` |
 
 ## Quick References
 

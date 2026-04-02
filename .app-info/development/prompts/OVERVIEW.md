@@ -15,7 +15,22 @@
 | Improve Codegen | `FEATURE_IMPROVE_CODEGEN.md` | recorder refinement, block-editor follow-up, generated-test ergonomics |
 | Migration Plan | `Migration_plan.md` | architecture pivot and migration checklist |
 
+## Phase Status
+
+| Phase | Status | Key Deliverables |
+|---|---|---|
+| 1 | Complete | Express server, React SPA, REST API + WebSocket, settings |
+| 2 | Complete | Project creation, import, health checks |
+| 3 | Complete | File explorer, code editor, test indexing |
+| 4 | Complete | Run orchestration, log streaming, result persistence |
+| 5 | Complete | Artefact management, policies, rerun flows |
+| 6 | Complete | Environments, secrets, recorder |
+| 7 | Complete | Packaging, OpenAPI, plugin runtime, bundled distribution |
+| 8 | In Progress | UX redesign, block editor enhancements, suites, styling |
+
 ## Notes
 
 - These prompts describe the build history and implementation structure.
-- The current app now also includes the plugin runtime, visual block editor, block library, project integrations, and the Mendix plugin on top of that platform.
+- The current app includes the plugin runtime, visual block editor, block library, project integrations, and the Mendix plugin on top of the foundational platform.
+- The `Migration_plan.md` documents the historical Electron-to-web architecture pivot; this work has been completed.
+- `FEATURE_IMPROVE_CODEGEN.md` documents the recorder refinement strategy; this work has been completed and is maintained as part of the block editor and plugin systems.

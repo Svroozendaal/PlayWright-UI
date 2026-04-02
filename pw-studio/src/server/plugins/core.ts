@@ -121,8 +121,6 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
     builtIn: true,
     fields: [
       { key: 'target', label: 'Source test', type: 'test_case' },
-      { key: 'stepTitle', label: 'Step label', type: 'text', placeholder: 'Run selected subflow' },
-      { key: 'inputMappings', label: 'Input mappings', type: 'flow_mapping' },
     ],
     display: { label: 'Use subflow', detailSource: 'test.title', separator: ': ' },
     parseStatement: (statement, title) => parseUseSubflowBlock(statement, title),
@@ -377,6 +375,32 @@ const coreBlockDefinitions: ServerBlockDefinition[] = [
     validate: (block, context) => validateSelectorBlock(block, context.flowInputs),
   },
   {
+    kind: 'wait',
+    name: 'Wait',
+    description: 'Pause the test for a fixed number of milliseconds.',
+    category: 'Actions',
+    defaultTitle: 'wait',
+    builtIn: true,
+    fields: [
+      { key: 'ms', label: 'Duration (ms)', type: 'text', required: true, placeholder: '1000' },
+    ],
+    display: { label: 'Wait', detailSource: 'value', separator: ': ' },
+    parseStatement: (statement, title) => parseWaitBlock(statement, title),
+    render: (block) => {
+      const raw = readStringValue(block, 'ms')
+      const ms = parseInt(raw, 10)
+      const msCode = isNaN(ms) ? '0' : String(ms)
+      return `await page.waitForTimeout(${msCode});${renderTitleComment(block)}`
+    },
+    validate: (block) => {
+      const raw = readStringValue(block, 'ms')
+      if (!raw.trim()) return ['Duration is required']
+      const ms = parseInt(raw, 10)
+      if (isNaN(ms) || ms < 0) return ['Duration must be a non-negative integer']
+      return []
+    },
+  },
+  {
     kind: 'raw_code',
     name: 'Raw code',
     description: 'Insert raw Playwright or TypeScript statements.',
@@ -565,6 +589,17 @@ const coreBlockTemplates: BlockTemplate[] = [
     display: { label: 'Expect checked', detailSource: 'selector.name', quoteDetail: true, separator: ' ' },
   },
   {
+    id: 'wait',
+    name: 'Wait',
+    description: 'Pause the test for a fixed number of milliseconds.',
+    category: 'Actions',
+    block: {
+      kind: 'wait',
+      values: { ms: '1000' },
+    },
+    display: { label: 'Wait', detailSource: 'value', separator: ': ' },
+  },
+  {
     id: 'raw-code',
     name: 'Raw code',
     description: 'Insert plain Playwright or TypeScript statements when no visual block exists yet.',
@@ -681,6 +716,25 @@ function parseExpectCheckedBlock(
   const selector = parseSelectorExpression(selectorArg, constants, locatorNodes)
   if (!selector) return null
   return createParsedBlock('expect_checked', title, { selector, checked: isNegated ? 'unchecked' : 'checked' })
+}
+
+function parseWaitBlock(statement: ts.Statement, title: string | null): TestBlock | null {
+  if (!ts.isExpressionStatement(statement)) return null
+  const expression = unwrapAwait(statement.expression)
+  if (!ts.isCallExpression(expression)) return null
+  if (
+    !ts.isPropertyAccessExpression(expression.expression) ||
+    expression.expression.name.text !== 'waitForTimeout' ||
+    !ts.isIdentifier(expression.expression.expression) ||
+    expression.expression.expression.text !== 'page'
+  ) {
+    return null
+  }
+
+  const arg = expression.arguments[0]
+  if (!arg || !ts.isNumericLiteral(arg)) return null
+
+  return createParsedBlock('wait', title, { ms: arg.text })
 }
 
 function parseGotoBlock(statement: ts.Statement, title: string | null, constants: string[] = []): TestBlock | null {

@@ -19,14 +19,16 @@ PW Studio is a local web application for Playwright Test. It provides project ma
 
 ## Main User Areas
 
-- Projects
-- Dashboard
-- Explorer
-- Runs
-- Recorder
-- Settings
-- Integrations
-- Block Library
+- Projects: create, import, and manage Playwright projects
+- Dashboard: summary view with key metrics and recent activity
+- Explorer: file tree with code editor and visual block editor
+- Runs: execution history, logs, results, and artefacts
+- Suites: batch test configurations and grouped test execution
+- Recorder: codegen capture and code refinement
+- Environments: project-level environment configuration with variables
+- Block Library: reusable block templates (core and custom)
+- Plugins: global plugin manager and project integration controls
+- Settings: application and project preferences
 
 ## Non-Goals
 

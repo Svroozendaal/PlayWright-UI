@@ -1353,6 +1353,7 @@ function BlockFields({
           onChange={(value) =>
             onChange({ ...block, values: { ...block.values, [field.key]: value } })
           }
+          onBlockChange={onChange}
         />
       ))}
     </div>
@@ -1372,6 +1373,7 @@ function FieldEditor({
   availableTestCases,
   activeEnvVarNames,
   onChange,
+  onBlockChange,
 }: {
   block: TestBlock
   field: BlockFieldSchema
@@ -1382,6 +1384,7 @@ function FieldEditor({
   availableTestCases: AvailableTestCase[]
   activeEnvVarNames: string[]
   onChange: (value: BlockFieldValue) => void
+  onBlockChange?: (block: TestBlock) => void
 }): JSX.Element {
   if (block.kind === 'constants_group' && field.key === 'definitions') {
     return (
@@ -1454,9 +1457,12 @@ function FieldEditor({
           label={field.label}
           block={block}
           value={getTestReferenceValue(value)}
-          flowInputs={flowInputs}
           availableTestCases={availableTestCases}
+          flowInputs={flowInputs}
+          constants={constants}
+          activeEnvVarNames={activeEnvVarNames}
           onChange={onChange}
+          onBlockChange={onBlockChange}
         />
       )
     default:
@@ -1629,18 +1635,44 @@ function TestReferenceEditor({
   label,
   block,
   value,
-  flowInputs,
   availableTestCases,
+  flowInputs,
+  constants,
+  activeEnvVarNames,
   onChange,
+  onBlockChange,
 }: {
   label: string
   block: TestBlock
   value: TestReferenceSpec | null
-  flowInputs: FlowInputDefinition[]
   availableTestCases: AvailableTestCase[]
+  flowInputs: FlowInputDefinition[]
+  constants: string[]
+  activeEnvVarNames: string[]
   onChange: (value: BlockFieldValue) => void
+  onBlockChange?: (block: TestBlock) => void
 }): JSX.Element {
   const inputMappings = getFlowInputMappings(block.values['inputMappings'])
+  const targetCase = value
+    ? availableTestCases.find((t) => t.filePath === value.filePath && t.ordinal === value.ordinal)
+    : undefined
+  const targetFlowInputs: FlowInputDefinition[] = targetCase?.flowInputs ?? []
+
+  const updateMappingValue = (fi: FlowInputDefinition, newValue: string): void => {
+    const next = inputMappings.filter((m) => m.targetName !== fi.name)
+    if (newValue.trim() !== '') {
+      next.push({ targetName: fi.name, source: 'literal', value: newValue })
+    }
+    const nextBlock: TestBlock = {
+      ...block,
+      values: { ...block.values, inputMappings: next as BlockFieldValue },
+    }
+    if (onBlockChange) {
+      onBlockChange(nextBlock)
+    } else {
+      onChange(next as BlockFieldValue)
+    }
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1656,7 +1688,19 @@ function TestReferenceEditor({
               (t) => t.filePath === fp && t.ordinal === ord
             )
             if (tc) {
-              onChange({ filePath: tc.filePath, ordinal: tc.ordinal, testTitle: tc.testTitle })
+              const nextBlock: TestBlock = {
+                ...block,
+                values: {
+                  ...block.values,
+                  target: { filePath: tc.filePath, ordinal: tc.ordinal, testTitle: tc.testTitle },
+                  inputMappings: [],
+                },
+              }
+              if (onBlockChange) {
+                onBlockChange(nextBlock)
+              } else {
+                onChange({ filePath: tc.filePath, ordinal: tc.ordinal, testTitle: tc.testTitle })
+              }
             }
           }}
         >
@@ -1668,42 +1712,26 @@ function TestReferenceEditor({
           ))}
         </select>
       </label>
-      {flowInputs.length > 0 && (
+      {targetFlowInputs.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Input Mappings
+            Input Parameters
           </span>
-          {flowInputs.map((fi) => {
-            const mapping = inputMappings.find((m) => m.targetName === fi.name) ?? {
-              targetName: fi.name,
-              source: 'literal' as const,
-              value: '',
-            }
-            const updateMapping = (patch: Partial<FlowInputMapping>): void => {
-              const next = inputMappings.filter((m) => m.targetName !== fi.name)
-              next.push({ ...mapping, ...patch })
-              onChange(next as BlockFieldValue)
-            }
+          {targetFlowInputs.map((fi) => {
+            const mapping = inputMappings.find((m) => m.targetName === fi.name)
+            const currentValue = mapping?.value ?? ''
             return (
-              <div key={fi.name} style={{ display: 'grid', gridTemplateColumns: 'auto auto 1fr', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)' }}>{fi.name}</span>
-                <select
-                  className="form-select"
-                  style={{ fontSize: 12, padding: '4px 8px', minWidth: 100 }}
-                  value={mapping.source}
-                  onChange={(e) => updateMapping({ source: e.target.value as FlowInputMapping['source'] })}
-                >
-                  <option value="literal">Literal</option>
-                  <option value="flow_input">Flow input</option>
-                  <option value="env_var">Env variable</option>
-                </select>
-                <input
-                  type="text"
-                  value={mapping.value}
-                  onChange={(e) => updateMapping({ value: e.target.value })}
-                  placeholder={mapping.source === 'flow_input' ? 'Input name' : mapping.source === 'env_var' ? 'Variable name' : 'Value'}
+              <label key={fi.name}>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{fi.name}</span>
+                <FlowAwareInput
+                  value={currentValue}
+                  placeholder={fi.defaultValue ? `default: ${fi.defaultValue}` : 'use default'}
+                  flowInputs={flowInputs}
+                  constants={constants}
+                  activeEnvVarNames={activeEnvVarNames}
+                  onChange={(v) => updateMappingValue(fi, v)}
                 />
-              </div>
+              </label>
             )
           })}
         </div>

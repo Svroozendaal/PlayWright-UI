@@ -12,7 +12,7 @@ type EditingEnv = {
 }
 
 function emptyEnv(): EditingEnv {
-  return { name: '', baseURL: '', variables: [] }
+  return { name: '', baseURL: '', variables: [{ key: 'PW_STUDIO_ACTION_TIMEOUT', value: '30000' }] }
 }
 
 function toEditing(env: Environment): EditingEnv {

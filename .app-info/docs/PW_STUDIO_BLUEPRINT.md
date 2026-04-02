@@ -110,6 +110,19 @@ The browser has no direct filesystem or Node access.
 - support headed mode and run options
 - stream logs in realtime
 - store run history, test results, and artefact paths
+- store run comparison data for side-by-side result viewing
+- access HTML reports directly from run detail
+- pause and resume recording during test runs
+
+### 7.4a Suites
+
+Batch test execution with grouped, configured test suites:
+
+- store suite definitions per project with named test sets
+- configure run options and filters per suite
+- execute suites to run multiple grouped test configurations
+- rerun failed tests from a suite
+- view suite run history and results
 
 ### 7.5 Recorder
 
@@ -128,8 +141,19 @@ The visual test editor:
 - saves back into the source file
 - reparses code edits back into blocks
 - caches visual documents locally for faster reloads
+- supports constants blocks for leading const declarations at the test scope
+- supports block parameters and flow input/output mapping for test-to-test data passing
+- supports subflows for invoking other tests with parameter passing
 
 The file remains the only runnable source of truth.
+
+Block features:
+
+- **Constants block**: groups const declarations at the top of test body with syntax validation
+- **Parameters**: blocks may accept configurable input fields exposed in the UI
+- **Subflows**: test blocks that invoke other tests (marked with `pw-studio-subflow:` prefix) and pass parameters
+- **Flow input definitions**: define what parameters a test accepts and how they are used
+- **Flow input mapping**: configure which constants or block outputs feed into subflow inputs
 
 ### 7.7 Block Library
 
@@ -337,37 +361,57 @@ pw-studio/
 
 ## 16. Build Phases
 
-### Phase 1 - Foundation
+### Phase 1 - Foundation (Complete)
 
 Express server, React SPA, route constants, envelope transport, settings bootstrap, project registry.
 
-### Phase 2 - Project Lifecycle + Health
+### Phase 2 - Project Lifecycle + Health (Complete)
 
 Project creation/import, template generation, config reading, health checks.
 
-### Phase 3 - Explorer
+### Phase 3 - Explorer (Complete)
 
 Indexing, file tree, test case detection, file reading and writing.
 
-### Phase 4 - Run Engine
+### Phase 4 - Run Engine (Complete)
 
 Run orchestration, command building, log streaming, result persistence.
 
-### Phase 5 - Artefacts
+### Phase 5 - Artefacts (Complete)
 
 Artefact policies, rerun failed, report and trace access.
 
-### Phase 6 - Environments + Secrets + Recorder
+### Phase 6 - Environments + Secrets + Recorder (Complete)
 
 Environments, keychain-backed secrets, recorder and save flow.
 
-### Phase 7 - Packaging + Platform
+### Phase 7 - Packaging + Platform (Complete)
 
 Bundled runtime, OpenAPI, block library, visual editor, plugin runtime, plugin management, documentation.
 
-## 17. Technical Debt
+### Phase 8 - UX + Design Overhaul (In Progress)
+
+Dashboard redesign, block editor enhancements (subflows, parameters, constants), suites page, continuous recording, report button, Carbon Logic design system, dark mode support, UX polish on explorer and runs pages.
+
+## 17. UX + Design
+
+The application now implements a Carbon Logic design system with:
+
+- Fixed header with app title and global controls
+- Compact left rail for navigation and project selection
+- Central workspace panel for content
+- Dark mode support with mode-aware CSS variables
+- Dense panel and table primitives for efficient screen usage
+- Consistent icon system via the `UiIcon` component
+- Responsive error banners and empty states aligned with API errors
+- Redesigned dashboard with improved summary statistics
+- Improved runs page layout and result presentation
+
+## 18. Technical Debt
 
 - Frontend plugin code loading is not yet dynamic; plugins currently expose backend/runtime capabilities and UI metadata
 - Plugins run in-process with lightweight isolation
 - Visual editor block coverage is still intentionally partial, with raw code fallback for unsupported statements
 - End-to-end automated browser coverage should be expanded for plugin flows and recorder-to-block pipelines
+- Subflow invocation currently uses inline comment markers; a more robust metadata system may be needed
+- Continuous recording pause/resume is tied to the Playwright binary output; more granular control may be beneficial

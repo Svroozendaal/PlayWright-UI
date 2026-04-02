@@ -41,6 +41,8 @@ export function createRunConfigOverride(
     `import originalConfig from ${JSON.stringify(importPath)}
 
 const baseConfig = originalConfig ?? {}
+const actionTimeoutRaw = process.env.PW_STUDIO_ACTION_TIMEOUT
+const actionTimeout = actionTimeoutRaw ? parseInt(actionTimeoutRaw, 10) : undefined
 
 export default {
   ...baseConfig,
@@ -53,6 +55,7 @@ ${testDirLine}  reporter: [
   use: {
     ...(baseConfig.use ?? {}),
     baseURL: process.env.BASE_URL ?? baseConfig.use?.baseURL,
+    ...(actionTimeout && !isNaN(actionTimeout) ? { actionTimeout } : {}),
   },
 }
 `

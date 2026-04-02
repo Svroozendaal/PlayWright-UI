@@ -41,6 +41,14 @@ pw-studio/
 
 ## Environment Variables
 
-- `PORT` - optional local server port override
-- `PW_STUDIO_PLUGIN_DIRS` - optional extra plugin directories
-- `PWSTUDIO_EXTRACT=1` - config extraction hint
+- `PORT` — optional local server port override (default 3000)
+- `PW_STUDIO_PLUGIN_DIRS` — optional extra plugin directories (comma-separated paths)
+- `PWSTUDIO_EXTRACT=1` — config extraction hint for Playwright config reading
+
+## Development Commands
+
+- `npm run dev` — start server with file watch and Vite frontend
+- `npm run build` — build SPA and compile server TypeScript
+- `npm run preview` — preview production build with server
+- `npm run typecheck` — validate all TypeScript files
+- `npm run bundle:runtime` — package server and Node.js into distributable archive

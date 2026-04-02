@@ -75,7 +75,13 @@
       "Bash(echo \"WEB:$?\")",
       "Bash(tasklist)",
       "Bash(node_modules/.bin/playwright.cmd codegen:*)",
-      "Bash(find '/c/Workspaces/PlayWright UI' -type f -path */server/utils/* -name *.ts)"
+      "Bash(find '/c/Workspaces/PlayWright UI' -type f -path */server/utils/* -name *.ts)",
+      "Bash(grep -n \"^const \\\\|^]$\\\\|^}\" \"/c/Workspaces/PlayWright UI/pw-studio/src/server/plugins/core.ts\")",
+      "Bash(grep -n \"^]$\\\\|^] \" \"/c/Workspaces/PlayWright UI/pw-studio/src/server/plugins/core.ts\")",
+      "Bash(grep -E '\\\\.ts$')",
+      "Bash(xargs basename:*)",
+      "Bash([ -f \"/c/Workspaces/PlayWright UI/.app-info/skills/$skill/SKILL.md\" ])",
+      "Read(//tmp/**)"
     ]
   }
 }

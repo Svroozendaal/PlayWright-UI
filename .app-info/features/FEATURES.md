@@ -38,6 +38,9 @@
 | Run history and detail | complete | Results, reports, traces, and reruns |
 | Artefact policy management | complete | Project and file-level behaviour |
 | Run comparison | complete | Compare result sets between runs |
+| Report button | complete | Direct access to HTML report from run detail |
+| Suites | complete | Batch test execution with grouped, configured test suites |
+| Continuous recording | complete | Pause/resume recording functionality during test runs |
 
 ## Environments + Secrets + Recorder
 
@@ -59,6 +62,9 @@
 | Plugin manager | complete | Global installed-plugin view |
 | Project integrations page | complete | Per-project plugin enablement |
 | Mendix Portable Workflow plugin | complete | Optional shipped plugin for recorder and block extensions |
+| Constants and block parameters | complete | Top-level const declarations and parameter mapping to blocks |
+| Subflows | complete | Test-to-test invocation and reusable block flows |
+| Block input/output mapping | complete | Flow parameter definitions and variable binding |
 
 ## Packaging + Platform
 
@@ -68,3 +74,13 @@
 | Bundled runtime | complete | Zipped Node runtime packaging |
 | PWA manifest | complete | Installable browser app metadata |
 | Documentation set | complete | Blueprint, product docs, public docs, and skill registry updated |
+
+## UX + Design
+
+| Feature | Status | Notes |
+|---|---|---|
+| Carbon Logic styling system | complete | Fixed header, compact rail, central workspace, dense primitives |
+| Dark mode token support | complete | Mode-aware CSS variables and panel/table styling |
+| Dashboard redesign | complete | Updated layout and summary statistics |
+| Runs page redesign | complete | Improved layout and result presentation |
+| UiIcon component | complete | Consistent icon system across the UI |
