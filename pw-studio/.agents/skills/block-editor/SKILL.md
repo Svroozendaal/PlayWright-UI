@@ -2,71 +2,58 @@
 
 ## Purpose
 
-Guide the correct implementation of visual block authoring features — block definitions, templates, the code round-trip, and new block kinds — in PW Studio.
+Guide the use of the PW Studio visual block editor to author and modify Playwright tests as blocks, and to manage block templates in the Block Library.
 
 ## When to Use
 
-- Adding a new visual block kind (a new statement type the editor can represent as a block).
-- Adding or modifying block templates in the library.
-- Modifying the code-to-block or block-to-code mapping logic.
-- Working with constants blocks, parameters, subflows, or flow input definitions.
+- Authoring or editing tests using the visual block editor instead of the code editor.
+- Adding a reusable block template to the Block Library.
+- Working with constants, parameters, or subflows in a test.
+- Understanding what the visual editor can and cannot represent.
+
+## Core Concept
+
+The block editor is an **authoring layer** only. It reads from and writes back to the `.spec.ts` source file. The file is always the source of truth — the block view and code view represent the same content.
+
+Supported Playwright statements are shown as typed blocks. Statements the editor cannot map appear as **raw code blocks** — they are preserved verbatim and are still fully editable in the code view.
 
 ## Procedure
 
-### Core Concepts
+### Editing Tests as Blocks
 
-- The visual editor is an **authoring layer only** — it reads from and writes back to the `.spec.ts` source file.
-- The `.spec.ts` file is always the source of truth for execution.
-- Statements the editor cannot map to a block are kept as **raw code blocks** — they are preserved verbatim.
-- The visual document is cached locally for faster reloads but is always regenerated from the source file when the file changes.
+1. Open a `.spec.ts` file in the Explorer.
+2. Switch to the visual block editor view.
+3. Each `test()` function in the file is shown as a sequence of blocks.
+4. Click a block to configure its fields.
+5. Drag blocks to reorder steps.
+6. Delete blocks to remove steps.
+7. Save — changes write back to the `.spec.ts` file immediately.
 
-### Block Kinds
+### Block Features
 
-Each block kind maps to one or more Playwright API call patterns. A block kind definition must include:
-
-1. A unique `kind` identifier string.
-2. A code-to-block parser that recognises the statement pattern.
-3. A block-to-code generator that produces valid Playwright TypeScript.
-4. A UI descriptor (label, icon, configurable fields).
-
-When adding a new block kind:
-1. Define the kind in the block definitions module (`src/server/services/` block service or equivalent).
-2. Register it with the block registry.
-3. Add a default template to the block library if the kind has a common usage pattern.
-4. Test the round-trip: source file → parse to blocks → save back to file → file content matches original.
-
-### Special Block Features
-
-| Feature | Description |
+| Feature | What it does |
 |---|---|
-| Constants block | Groups `const` declarations at the top of the test body; validates syntax before saving |
-| Parameters | Blocks may expose configurable input fields shown in the block UI |
-| Subflows | Test blocks that invoke other tests (marked with `pw-studio-subflow:` prefix) and pass parameters |
-| Flow input definitions | Declare what parameters a test accepts and how they map to variables |
-| Flow input mapping | Configure which constants or block outputs feed into subflow inputs |
+| **Constants block** | Groups `const` declarations at the top of the test body; validates syntax before saving |
+| **Parameters** | Makes a block's fields configurable when the block is saved as a reusable template |
+| **Subflow** | Invokes another test (prefixed `pw-studio-subflow:`) and passes parameters to it |
+| **Flow input definitions** | Declares what parameters a test accepts from a calling subflow |
+| **Flow input mapping** | Wires constants or block outputs into a subflow's input parameters |
 
-### Block Templates
+### Adding a Template to the Block Library
 
-- Block templates live in the global block library (file-backed in app data).
-- Core templates are built into the app.
-- Plugin-contributed templates are registered via the plugin extension point.
-- Custom templates are stored per user in the app data directory.
-- Projects only control which templates are **enabled** — they do not store the templates themselves.
+1. Configure a block with the desired fields and values.
+2. Save it as a template from the block context menu.
+3. The template appears in the Block Library and can be inserted into any test in the project (subject to project enablement).
+4. To make a template available across all projects, ensure it is saved to the global block library (not project-scoped).
 
-### Code Round-Trip Rules
+### Managing the Block Library
 
-1. A round-trip (parse → edit → save → reparse) must produce the same block structure.
-2. Never silently discard code that cannot be mapped — keep it as a raw code block.
-3. Constant declarations at test scope must be preserved at the top of the test body.
-4. The editor must not alter whitespace or comments outside the blocks it manages.
-
-## Output / Expected Result
-
-- A new block kind with a working parser, generator, and UI descriptor.
-- A round-trip test confirming the code-to-block-to-code transformation is lossless.
-- New templates registered in the block library.
+- Open the Block Library page to view, edit, or delete templates.
+- Core templates and plugin-contributed templates are read-only — only custom templates can be edited.
+- Per-project availability is controlled on the Block Library page — enable or disable specific templates for a project.
 
 ## Notes
 
-- Block definitions that are system-specific (e.g., Mendix-specific actions) belong in a plugin, not in core.
-- The block editor must gracefully degrade when it encounters unsupported statements — the raw code block is the fallback.
+- The code view and block view are always in sync — switching between them does not lose any content.
+- Raw code blocks (unsupported statements) are never altered by the block editor — they pass through unchanged.
+- Plugin-contributed block kinds and templates appear automatically when the plugin is enabled for the project.

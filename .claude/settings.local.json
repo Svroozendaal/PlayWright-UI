@@ -81,7 +81,9 @@
       "Bash(grep -E '\\\\.ts$')",
       "Bash(xargs basename:*)",
       "Bash([ -f \"/c/Workspaces/PlayWright UI/.app-info/skills/$skill/SKILL.md\" ])",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(rm \"pw-studio/src/renderer/src/pages/ProjectDetailPage.tsx\")",
+      "Bash(rm -rf \"pw-studio/src/server/ai\")"
     ]
   }
 }

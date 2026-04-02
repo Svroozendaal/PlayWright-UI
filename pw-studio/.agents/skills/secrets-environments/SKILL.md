@@ -2,45 +2,50 @@
 
 ## Purpose
 
-Guide the correct handling of secrets via `keytar` and per-project environment variable management in PW Studio.
+Guide the setup and use of per-project environments, variables, and keychain-backed secrets in PW Studio.
 
 ## When to Use
 
-- Adding, reading, or deleting a secret (API key, password, token).
-- Working with per-project environment configuration or variable overrides.
-- Passing environment variables to a Playwright test run.
+- Creating or switching project environments (e.g., `staging`, `production`, `local`).
+- Adding, editing, or removing environment variables.
+- Storing or referencing a sensitive value (password, token, API key) as a secret.
+- Diagnosing a run failure caused by a missing variable or secret.
 
 ## Procedure
 
-### Secrets (keytar)
+### Creating an Environment
 
-1. All secrets are stored in the OS keychain via `keytar` — never in SQLite, flat files, or memory beyond the request scope.
-2. Use the secrets service in `src/server/services/` for all keytar operations — do not call `keytar` directly from a route handler.
-3. Secret keys follow the format: `pw-studio:<project-id>:<secret-name>`.
-4. Never return a secret's value in an API response unless the endpoint is explicitly designed for secret retrieval and is documented as such.
-5. Never log secret values — log only the secret key (name), not the value.
-6. When a project is deleted, prompt to clean up associated secrets from the keychain.
+1. Open the Environments page for the project.
+2. Create a named environment (e.g., `staging`).
+3. Add variables to the environment — each variable has a name and a value.
+4. Optionally reference a keychain secret as the value for sensitive variables.
 
-### Environment Variables
+### Variable Conventions
 
-1. Per-project environments are stored in the project-level config (not in the PW Studio SQLite database).
-2. An environment can define named variables with values, and optionally reference a secret by key for sensitive values.
-3. When running tests, merge the selected environment's variables into the child process environment — never into the Playwright config file.
-4. Variable resolution order: selected environment overrides → project defaults → system environment.
-5. Sensitive variables (backed by keytar secrets) are resolved at spawn time and must not appear in logs or stored run metadata.
+- Name variables in `UPPER_SNAKE_CASE` (e.g., `BASE_URL`, `API_KEY`, `TEST_USER_PASSWORD`).
+- Reference variables in test files as `process.env.VAR_NAME` — never hardcode values.
+- Keep environment-specific URLs, user credentials, and configuration in variables — not in the test code.
 
-### Validation
+### Storing Secrets
 
-- Validate that referenced secret keys exist in the keychain before a run starts — surface the missing key as a health-check failure.
-- Validate variable names against the pattern `[A-Z_][A-Z0-9_]*` (conventional env var format).
+- Store sensitive values (passwords, tokens, API keys) as keychain-backed secrets — not as plain text variables.
+- Add a secret from the Environments page — PW Studio stores it in the OS keychain.
+- Reference a secret by name in an environment variable — the value is resolved at run time and never visible in the UI or logs.
+- Secrets are scoped per project. When a project is removed, delete associated secrets via the Environments page.
 
-## Output / Expected Result
+### Selecting an Environment for a Run
 
-- Secrets stored and retrieved via `keytar` through the secrets service.
-- Environment variables merged into the child process at spawn time — not persisted in logs.
-- Missing secrets surfaced as a health-check failure before a run starts.
+- Before running tests, ensure the correct environment is selected for the project.
+- The selected environment's variables are injected into the Playwright child process at run time.
+- The variable resolution order is: selected environment overrides → project defaults → system environment.
+
+### Diagnosing Missing Variables
+
+1. Check the project health checks — missing keychain secrets surface as a health-check failure before a run starts.
+2. If a run fails with `process.env.VAR_NAME is undefined`, confirm the variable exists in the selected environment.
+3. Confirm the correct environment is selected for the project.
 
 ## Notes
 
-- `keytar` may not be available in all environments (e.g., CI without a keychain). Handle the unavailable case gracefully and surface it in the health check.
-- Do not store the keytar service account name as a hardcoded string in multiple places — use a single constant.
+- Secret values are never stored in the PW Studio database or shown in the UI after saving.
+- If the OS keychain is unavailable (e.g., a headless CI environment), secrets will not resolve — the health check will flag this.

@@ -1,9 +1,9 @@
 # AGENTS — PW Studio
 ## Orchestrator and Starting Point
 
-This file is the primary entry point for any AI assistant working inside the `pw-studio/` folder as a standalone context.
+This file is the primary entry point for any AI assistant working inside the `pw-studio/` folder.
 
-Read this file first. Then read `.agents/app/OVERVIEW.md` to understand what the app does, and `.agents/app/ARCHITECTURE.md` to understand how it is built.
+PW Studio is a local UI for Playwright Test. This agent framework covers **using** PW Studio — writing and running tests, managing projects, working with environments, the recorder, the visual block editor, and plugins. It does not cover developing PW Studio itself.
 
 ---
 
@@ -18,7 +18,7 @@ PW Studio is a local web application for Playwright Test orchestration. It provi
 - Environment and secrets management
 - A global block library and plugin system
 
-The app runs entirely on the developer's machine. A Node.js Express server hosts a React SPA, exposes REST and WebSocket APIs, and manages SQLite, the OS keychain, filesystem watching, and local Playwright execution.
+The app runs entirely on the developer's machine. Start it with `npm run dev` inside the `pw-studio/` folder, then open the browser UI.
 
 ---
 
@@ -27,32 +27,27 @@ The app runs entirely on the developer's machine. A Node.js Express server hosts
 Before acting on any prompt:
 
 1. Read this file (`AGENTS.md`).
-2. Read `.agents/app/OVERVIEW.md` — app identity, core principles, and main areas.
-3. Read `.agents/app/ARCHITECTURE.md` — stack, transport, runtime, and folder map.
-4. Ask clarifying questions before changing any files.
-5. Confirm scope and non-goals before starting.
+2. Read `.agents/app/OVERVIEW.md` — app identity and main areas.
+3. Ask clarifying questions before changing any files.
+4. Confirm scope before starting.
 
 ---
 
 ## Agent Selection Logic
 
-Classify the task and route to the correct agent. Evaluate rules in order:
+Classify the task and route to the correct agent:
 
 | # | Task type | Agent |
 |---|---|---|
-| 1 | Small, single-file, unambiguous change with no new contracts | **Light** |
-| 2 | Architectural decision, new module, or new data contract | **Architect** |
-| 3 | Backend logic, API, data storage, business rules | **Developer** |
-| 4 | Frontend/UI — layout, components, styling, responsive behaviour | **Designer** |
-| 5 | Bug or defect requiring root-cause analysis | **Debugger** |
-| 6 | Test creation, validation, or regression check | **Tester** |
-| 7 | Documentation creation or update | **Documenter** |
-| 8 | Branch, PR, release, or deployment task | **Deployment** |
-| 9 | Unsure which agent or skill applies | **Agent Finder** |
-
-**Multi-agent tasks:** Sequence agents — for example: Architect → Developer → Tester → Deployment.
-
-**Skills:** Before any non-trivial task, consult `.agents/skills/OVERVIEW.md` for available skills.
+| 1 | Writing, editing, or organising Playwright test files | **Test Author** |
+| 2 | Running tests, interpreting results, triaging failures | **Test Runner** |
+| 3 | Recording a new test flow with the PW Studio recorder | **Recorder** |
+| 4 | Setting up or modifying project environments and secrets | **Environment Manager** |
+| 5 | Adding or configuring a block template in the block library | **Block Author** |
+| 6 | Enabling, configuring, or using a plugin | **Plugin Manager** |
+| 7 | Updating test documentation or run reports | **Documenter** |
+| 8 | Small, single-file, clearly-scoped change | **Light** |
+| 9 | Unsure which agent applies | **Agent Finder** |
 
 ---
 
@@ -60,13 +55,13 @@ Classify the task and route to the correct agent. Evaluate rules in order:
 
 | Agent | File | Responsibility |
 |---|---|---|
-| Architect | `.agents/agents/ARCHITECT.md` | Design, scope, contracts, decisions |
-| Developer | `.agents/agents/DEVELOPER.md` | Backend development, security, delivery |
-| Designer | `.agents/agents/DESIGNER.md` | Frontend/UI, components, styling |
-| Tester | `.agents/agents/TESTER.md` | Validation, edge cases, regressions |
-| Debugger | `.agents/agents/DEBUGGER.md` | Root-cause analysis and fixes |
-| Documenter | `.agents/agents/DOCUMENTER.md` | Documentation quality and upkeep |
-| Deployment | `.agents/agents/DEPLOYMENT.md` | Branching, PRs, CI/CD, release hygiene |
+| Test Author | `.agents/agents/TEST_AUTHOR.md` | Write, edit, and organise `.spec.ts` test files |
+| Test Runner | `.agents/agents/TEST_RUNNER.md` | Run tests, interpret results, triage failures |
+| Recorder | `.agents/agents/RECORDER.md` | Record new test flows and refine generated code |
+| Environment Manager | `.agents/agents/ENVIRONMENT_MANAGER.md` | Manage environments, variables, and secrets |
+| Block Author | `.agents/agents/BLOCK_AUTHOR.md` | Add and configure visual block templates |
+| Plugin Manager | `.agents/agents/PLUGIN_MANAGER.md` | Enable, configure, and use plugins |
+| Documenter | `.agents/agents/DOCUMENTER.md` | Test documentation and run report summaries |
 | Light | `.agents/agents/LIGHT.md` | Fast-path for small, clearly-scoped tasks |
 | Agent Finder | `.agents/agents/AGENT_FINDER.md` | Route queries to the correct agent or skill |
 
@@ -76,49 +71,30 @@ Classify the task and route to the correct agent. Evaluate rules in order:
 
 | Skill | File | Domain |
 |---|---|---|
-| Server API | `.agents/skills/server-api/SKILL.md` | Express routes, envelope pattern, WebSocket events |
-| Frontend Components | `.agents/skills/frontend-components/SKILL.md` | React pages, components, and routing |
-| Database | `.agents/skills/database/SKILL.md` | SQLite schema, migrations, and query patterns |
-| Playwright Runner | `.agents/skills/playwright-runner/SKILL.md` | Local binary execution, config, and result parsing |
-| Plugin System | `.agents/skills/plugin-system/SKILL.md` | Plugin discovery, registration, and extension points |
-| Block Editor | `.agents/skills/block-editor/SKILL.md` | Visual block authoring, templates, and code round-trip |
-| Secrets and Environments | `.agents/skills/secrets-environments/SKILL.md` | keytar, environment variables, and project config |
+| Playwright Runner | `.agents/skills/playwright-runner/SKILL.md` | Running tests, configs, and result interpretation |
+| Block Editor | `.agents/skills/block-editor/SKILL.md` | Visual block authoring and templates |
+| Plugin System | `.agents/skills/plugin-system/SKILL.md` | Plugin enablement and extension points |
+| Secrets and Environments | `.agents/skills/secrets-environments/SKILL.md` | Environments, variables, and keychain secrets |
+| Expand Test | `.agents/skills/expand-test/SKILL.md` | Generate thorough test coverage from a seed test as a precondition |
 
 ---
 
 ## Core Conventions
 
 - Use UK English in all documentation.
-- Use the local Playwright binary — never `npx playwright`.
-- `.spec.ts` files are the only executable source of truth.
-- All shared type contracts live in `src/shared/types/`.
-- API responses use the `ApiEnvelope<T>` pattern.
-- Route system-specific behaviour through plugins.
-- Keep secrets in the OS keychain only.
-- `npm run dev` for local development; `npm run build` for production.
+- `.spec.ts` files are the only executable source of truth — the visual block editor writes back to them.
+- Use `npm run dev` to start PW Studio locally.
+- Never use `npx playwright` directly — always run tests through PW Studio or the project's local binary.
+- Keep secrets in the OS keychain only — never in plain text files.
 
 ---
 
-## Directory Map (pw-studio/)
+## Memory
 
-| Path | Purpose |
-|---|---|
-| `src/server/` | Express server, routes, services, plugin runtime |
-| `src/renderer/` | React SPA — pages, components, hooks, styles |
-| `src/shared/` | Shared types, contracts, constants |
-| `plugins/` | Shipped local plugins |
-| `resources/` | Packaged static assets |
-| `.agents/` | This AI framework (standalone context) |
+Write session decisions and progress to `.agents/app/memory/` (create files as needed):
 
----
-
-## Memory and Decisions
-
-Write session decisions, progress, and handoffs to `.agents/app/memory/` (create the folder if it does not exist):
-
-- `SESSION_STATE.md` — current session context and handoff blocks
-- `DECISIONS_LOG.md` — architectural decisions and rationale
-- `PROGRESS.md` — implementation progress per task
+- `SESSION_STATE.md` — current context and handoff blocks
+- `PROGRESS.md` — task progress
 
 ---
 

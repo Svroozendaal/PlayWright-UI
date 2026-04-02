@@ -2,50 +2,56 @@
 
 ## Purpose
 
-Guide the correct use of the local Playwright binary for test execution, config reading, and result parsing in PW Studio.
+Guide correct test execution and result interpretation inside PW Studio — running tests, reading results, and understanding run configuration.
 
 ## When to Use
 
-- Running or managing Playwright test execution from the server.
-- Reading Playwright project configuration from a project's `playwright.config.ts`.
-- Parsing test results from the JSON reporter output.
-- Resolving the local Playwright binary path.
+- Deciding how to run a specific test, file, folder, or suite.
+- Interpreting run results, failure messages, or artefact output.
+- Configuring run options (headed mode, environment, retry count).
+- Investigating why a run produced unexpected results.
 
 ## Procedure
 
-### Binary Resolution
+### Choosing What to Run
 
-1. Always resolve the Playwright binary from the project's local `node_modules` — never use `npx playwright` or a global binary.
-2. Use the utility in `src/server/utils/playwrightConfigOverride.ts` (or equivalent) for resolution.
-3. If the binary is not found, report a health-check failure — do not fall back to a global install.
+| Target | Where in PW Studio |
+|---|---|
+| Single test | Explorer → right-click test → Run |
+| Single file | Explorer → right-click file → Run |
+| Folder | Explorer → right-click folder → Run |
+| Named suite | Runs → Suites → select suite → Run |
+| Rerun failed tests | Run Detail → Rerun failed |
 
-### Running Tests
+### Run Options
 
-1. Spawn Playwright as a child process using `src/server/services/` runner logic — do not call the Playwright API directly.
-2. Use the `--reporter=json` flag (or the configured reporter) to capture structured output.
-3. Stream stdout and stderr to connected WebSocket clients via `WS_EVENTS` push events during the run.
-4. Capture the process exit code and map it to a run status (`passed`, `failed`, `interrupted`).
-5. On Windows, handle process termination carefully — use the child process spawn utilities rather than raw `child_process` to ensure clean cancellation.
+- **Headed mode** — opens a visible browser during the run; useful for debugging selectors and timing issues.
+- **Environment** — select the active environment before running to inject the correct variables.
+- **Retries** — configure in the project's `playwright.config.ts`; PW Studio surfaces retry results per test.
+- **Continuous recording** — pause and resume recording during a run to capture a specific step mid-execution.
 
-### Config Reading
+### Reading Results
 
-1. Read the project's `playwright.config.ts` to extract `testDir`, named projects, and output directory.
-2. Use dynamic import or the config reader utility in `src/server/utils/` — do not parse the config file as plain text.
-3. Expose the config summary via the project health check endpoint.
+- **Run Detail** — shows per-test status (passed, failed, skipped, flaky), duration, and log output.
+- **HTML Report** — access via the report button on Run Detail; full Playwright HTML report with timeline and steps.
+- **Trace viewer** — open from the artefact section of Run Detail if a trace was captured.
+- **Run Comparison** — select two runs to diff their results and identify what changed between runs.
+- **Flaky Tests** — dedicated view for tests that have inconsistent pass/fail history.
 
-### Result Parsing
+### Triaging a Failure
 
-1. Parse the JSON reporter output from the Playwright run to extract per-test results.
-2. Map results to the `run_results` table schema.
-3. Extract artefact paths (traces, screenshots, videos) from the result and apply the artefact policy.
+1. Open Run Detail → read the failure message and stack trace.
+2. Check whether a trace artefact exists → open it for a step-by-step timeline with screenshots.
+3. Check whether the correct environment was selected — a missing variable often causes cryptic failures.
+4. Rerun in headed mode to observe what the browser does at the point of failure.
+5. If the test is in the Flaky Tests list, note the failure pattern before changing any code.
 
-## Output / Expected Result
+### Artefacts
 
-- Test execution that streams logs in real time and stores results in the database.
-- Binary resolution that surfaces a health-check failure rather than silently degrading.
-- Config summary available to the health check and explorer.
+- Artefact availability (traces, screenshots, videos) depends on the project's artefact policy.
+- Adjust the policy in project settings if expected artefacts are missing.
 
 ## Notes
 
-- The local binary path varies by OS — always construct it from `node_modules/.bin/playwright` relative to the project root.
-- Playwright runs are long-lived child processes — ensure cancellation is handled and the process group is cleaned up on Windows.
+- PW Studio always uses the project's local Playwright binary — never `npx playwright`.
+- Suite configurations are stored per project and can be reused across runs.

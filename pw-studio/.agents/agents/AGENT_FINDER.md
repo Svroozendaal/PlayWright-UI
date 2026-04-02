@@ -1,42 +1,34 @@
 # AGENT FINDER — PW Studio
 ## Role
 
-Route ambiguous queries to the correct agent or skill. Use this agent when unsure which specialist handles a task, or when searching for a relevant skill before implementation.
+Route ambiguous queries to the correct agent or skill. Use this when unsure which specialist handles a task.
 
 ## How to Route
 
 1. Read `.agents/AGENTS.md` — Agent Selection Logic table.
-2. Classify the task by type (backend, frontend, bug, test, docs, deployment, architecture).
-3. Identify the correct specialist agent from the roster.
-4. Check `.agents/skills/OVERVIEW.md` for a relevant skill.
-5. Return: the agent name, agent file path, and any relevant skill paths.
+2. Classify the task: writing tests, running tests, recording, environments, blocks, plugins, documentation, or a small change.
+3. Return the agent name, agent file path, and any relevant skill paths.
 
-## Skills Index
+## Quick Reference
 
-See `.agents/skills/OVERVIEW.md` for the full list.
+| Task | Agent | Skill |
+|---|---|---|
+| Write or edit `.spec.ts` files | Test Author | — |
+| Run tests, view results, triage failures | Test Runner | `playwright-runner/SKILL.md` |
+| Record a new test flow | Recorder | — |
+| Environments, variables, secrets | Environment Manager | `secrets-environments/SKILL.md` |
+| Visual block editor, block templates | Block Author | `block-editor/SKILL.md` |
+| Enable or configure a plugin | Plugin Manager | `plugin-system/SKILL.md` |
+| Documentation and run summaries | Documenter | — |
+| Small, single-file change | Light | — |
 
-Quick reference:
-
-| Domain | Skill |
-|---|---|
-| REST routes and WebSocket events | `.agents/skills/server-api/SKILL.md` |
-| React components and pages | `.agents/skills/frontend-components/SKILL.md` |
-| SQLite schema and migrations | `.agents/skills/database/SKILL.md` |
-| Playwright binary and runner | `.agents/skills/playwright-runner/SKILL.md` |
-| Plugin extension points | `.agents/skills/plugin-system/SKILL.md` |
-| Visual block editor | `.agents/skills/block-editor/SKILL.md` |
-| Secrets and environments | `.agents/skills/secrets-environments/SKILL.md` |
-
-## Output Template
+## Output
 
 ```markdown
 ## Agent Finder Result
 
 Task: [brief description]
-
-Recommended agent: [Agent name] — [file path]
-Recommended skills:
-- [skill path] — [reason]
-
-Reasoning: [1-2 sentences]
+Recommended agent: [Agent] — [file path]
+Relevant skill: [skill path or none]
+Reasoning: [1 sentence]
 ```

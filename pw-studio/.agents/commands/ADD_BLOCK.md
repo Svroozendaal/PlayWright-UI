@@ -2,36 +2,39 @@
 
 ## Purpose
 
-Guide the workflow for adding a new visual block kind or block template to PW Studio.
+Add a new reusable block template to the PW Studio Block Library so it can be inserted into tests via the visual block editor.
 
 ## Entry Criteria
 
-- The Playwright API call pattern the block should represent is defined.
-- It is clear whether this is a **core block** (belongs in core) or a **plugin block** (system-specific, belongs in a plugin).
+- The Playwright action or step the block should represent is clear.
+- It is known whether this is a **custom template** (saved by the user) or a **plugin-contributed template** (part of a plugin).
 
 ## Workflow
 
-1. **Clarify scope** — confirm: core block or plugin block? New kind or new template only?
-2. **Architect** — confirm the block kind interface and where it registers (core vs plugin). Produce the file plan.
-3. **Developer** — implement the block kind:
-   - Follow `.agents/skills/block-editor/SKILL.md` throughout.
-   - Write the code-to-block parser.
-   - Write the block-to-code generator.
-   - Register the kind with the block registry.
-   - Add a default template if applicable.
-4. **Designer** — implement the block UI descriptor (label, icon, configurable fields).
-5. **Tester** — write a round-trip test:
-   - Source file → parse to blocks → save back to file → file content matches original.
-6. **Documenter** — update `.agents/app/FEATURES.md` if this is a new block feature.
+### Option A — Custom Template (no plugin required)
+
+1. Open a `.spec.ts` file in the Explorer and switch to the visual block editor.
+2. Build the test step using existing block kinds — configure all fields to the desired defaults.
+3. Use the block context menu → **Save as template**.
+4. Give the template a clear, descriptive name.
+5. Open the Block Library page and confirm the template appears.
+6. Enable the template for the relevant project(s) from the Block Library page.
+
+### Option B — Plugin-Contributed Template
+
+Use this when the block represents a system-specific action (e.g., a Mendix widget interaction) that belongs in a plugin rather than the core library.
+
+1. Confirm a plugin exists that should own this template, or invoke **Plugin Manager** to set one up first.
+2. See `.agents/commands/ADD_PLUGIN.md` for the plugin creation workflow.
+3. Once the plugin is enabled for the project, the template appears automatically in the Block Library.
 
 ## Exit Criteria
 
-- New block kind parses correctly and generates valid Playwright TypeScript.
-- Round-trip test passes.
-- Block appears in the library with correct label and configurable fields.
-- Plugin blocks are in the plugin, not in core.
+- The template appears in the Block Library.
+- The template can be inserted into a test via the visual block editor.
+- The template is enabled for the intended project(s).
 
-## Skill Suggestions
+## Skill References
 
-- `.agents/skills/block-editor/SKILL.md` — mandatory for all block work
-- `.agents/skills/plugin-system/SKILL.md` — if the block belongs in a plugin
+- `.agents/skills/block-editor/SKILL.md` — block editor concepts and template management
+- `.agents/skills/plugin-system/SKILL.md` — if the template belongs in a plugin

@@ -1,124 +1,55 @@
-# ARCHITECTURE — PW Studio
+# ARCHITECTURE — PW Studio (User Reference)
 
-## Runtime Model
+This file describes how PW Studio works from a **user perspective** — what the app does at runtime, how its main areas connect, and where data lives. It is not a development guide.
+
+## How It Works
+
+PW Studio runs a local Node.js server on your machine. You open the browser UI at the address shown in the terminal after `npm run dev`. All test execution, file access, and secrets management happens on the server — the browser UI is the control surface.
 
 ```
-Browser UI  →  API client + WebSocket  →  Express server  →  services  →  SQLite / filesystem / Playwright / keytar
+Browser UI  →  PW Studio server  →  your project files / Playwright / OS keychain
 ```
 
-The browser has no direct filesystem or Node.js access. All system operations go through the Express server.
+## Main Areas
 
-## Transport
+| Area | What you do here |
+|---|---|
+| **Projects** | Register, import, and manage Playwright projects. Projects are registered by path — files stay where they are. |
+| **Dashboard** | Overview of recent runs, project health, and activity. |
+| **Explorer** | Browse test files, open them in the code editor or visual block editor, and run individual tests. |
+| **Runs** | View run history, test results, logs, traces, and HTML reports. Compare runs side by side. |
+| **Suites** | Define and run named groups of tests with specific configurations. |
+| **Recorder** | Launch Playwright codegen, capture a flow, and save it as a `.spec.ts` file. |
+| **Environments** | Manage per-project environments, variables, and keychain-backed secrets. |
+| **Block Library** | View, add, and manage reusable block templates for the visual editor. |
+| **Plugins** | Enable and configure plugins globally and per project. |
+| **Settings** | Application and project preferences. |
 
-### REST API
+## Where Data Lives
 
-All REST responses use the `ApiEnvelope<T>` pattern:
+| Data | Location |
+|---|---|
+| Project registrations and run history | PW Studio internal database (local SQLite) |
+| Test files | Your project folder (unchanged — PW Studio does not move them) |
+| Environment variables | Project-level config file inside the project folder |
+| Secrets | OS keychain (via `keytar`) — never in the database or files |
+| Block library custom templates | PW Studio app data directory |
+| Plugin enablement per project | `.pw-studio/plugins/<plugin-id>.json` inside the project folder |
+| Playwright config | Your project's `playwright.config.ts` — PW Studio reads it, does not modify it |
 
-```ts
-export type ApiEnvelope<T> = {
-  version: 1
-  payload?: T
-  error?: { code: string; message: string }
-}
+## Plugin Directories
+
+PW Studio discovers plugins from:
+
+1. `~/.pw-studio/plugins/` — your personal global plugins
+2. Optional extra directories set in app settings
+3. `pw-studio/plugins/` — plugins shipped with the app
+
+## Starting the App
+
+```bash
+# Inside the pw-studio/ folder:
+npm run dev
 ```
 
-Base path: `/api/`
-OpenAPI spec: `/api/openapi.json`
-
-### WebSocket
-
-Push events are sent over `/ws` using:
-
-```ts
-type SocketMessage = {
-  channel: string
-  data: unknown
-}
-```
-
-Plugins can also subscribe to these events internally via a server `EventEmitter` — no browser transport required.
-
-### Shared Contracts
-
-All shared types live in `src/shared/types/`:
-
-- `ipc.ts` — `ApiEnvelope<T>`, `IpcEnvelope<T>` (compat alias), `API_ROUTES`, `WS_EVENTS`, `ERROR_CODES`
-- Domain types, block-editor contracts, plugin manifests, and project plugin state
-
-## Security Model
-
-- Server binds to `127.0.0.1` only
-- CORS allowed only for the Vite dev origin in development; same-origin in production
-- Filesystem, process, and keychain access stays on the server
-- All route params, query, and body data are validated at the boundary
-- Secrets stored in the OS keychain via `keytar` — never in the database or filesystem
-
-## Folder Map
-
-| Path | Purpose |
-|---|---|
-| `src/server/` | Express server entry, route registration, WebSocket, plugin loader |
-| `src/server/routes/` | REST route handlers (one file per domain) |
-| `src/server/services/` | Business logic, Playwright runner, file services, recorder |
-| `src/server/db/` | SQLite setup, migrations, and query helpers |
-| `src/server/plugins/` | Plugin discovery, loading, and runtime |
-| `src/server/middleware/` | Auth, error handling, and request validation |
-| `src/server/utils/` | Shared server utilities (paths, process, config) |
-| `src/renderer/src/pages/` | Top-level page components (one per route) |
-| `src/renderer/src/components/` | Shared React components |
-| `src/renderer/src/hooks/` | Custom React hooks |
-| `src/shared/types/` | Shared TypeScript contracts |
-| `plugins/` | Shipped local plugins (e.g., mendix-portable-workflow) |
-| `resources/` | Static assets bundled at packaging time |
-
-## Key Services (src/server/services/)
-
-| Service | Responsibility |
-|---|---|
-| Project service | Project registry CRUD, config reading, health checks |
-| Runner service | Playwright binary resolution and test execution |
-| File service | File tree indexing, read/write, chokidar watcher |
-| Recorder service | Playwright codegen launch, save, and transform pipeline |
-| Block service | Block template registry (core + plugin + custom) |
-| Environment service | Per-project environment variables and keytar secret access |
-| Suite service | Suite definition storage and batch execution |
-
-## Plugin System
-
-Plugins are discovered from:
-
-1. `~/.pw-studio/plugins/` (user global)
-2. Optional configured extra directories
-3. `pw-studio/plugins/` (shipped local plugins)
-
-Project-level enablement is stored in `.pw-studio/plugins/<plugin-id>.json` inside the project folder.
-
-Plugins can contribute:
-- Recorder transforms
-- Block definitions and templates
-- Project setup hooks
-- Additional routes
-- UI metadata
-
-## Database
-
-SQLite via `better-sqlite3`. Schema is managed through sequential migration files. Key tables:
-
-| Table | Purpose |
-|---|---|
-| `projects` | Registered project metadata |
-| `runs` | Run history and results |
-| `run_results` | Per-test results within a run |
-| `artefacts` | Artefact paths and policy flags |
-| `suites` | Suite definitions per project |
-| `suite_runs` | Suite execution history |
-| `settings` | Key-value application settings |
-
-## Development Commands
-
-| Command | Purpose |
-|---|---|
-| `npm run dev` | Start server and renderer in development mode |
-| `npm run build` | Production build |
-| `npm run lint` | Run ESLint |
-| `npm run typecheck` | Run TypeScript type checks |
+Then open the URL shown in the terminal.
