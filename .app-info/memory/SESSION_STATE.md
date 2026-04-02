@@ -11,9 +11,9 @@ OPEN_BLOCKERS: [none or details]
 
 ## LIVE_LOG
 
-CURRENT_SCOPE: Documentation refresh complete; app ready for next phase.
-ACTIVE_AGENT: none
-LAST_HANDOFF: Comprehensive documentation refresh completed 2026-04-02.
+CURRENT_SCOPE: Codebase cleanup — removed unused files post-documentation refresh.
+ACTIVE_AGENT: Cleanup
+LAST_HANDOFF: Cleanup in progress 2026-04-02.
 OPEN_BLOCKERS: none
 
 ## HANDOFF - Developer - 2026-03-28
@@ -62,4 +62,10 @@ BLOCKERS: none
 STATUS: COMPLETE
 NEXT_AGENT: none
 SUMMARY: Comprehensive documentation refresh completed. Updated 8 core documentation files: FEATURES.md (added suites, report button, continuous recording, block enhancements, UX design), PW_STUDIO_BLUEPRINT.md (expanded block authoring section, added suites subsection, added UX+Design section, updated build phases), PRODUCT_PLAN.md (added Phase 8), app/OVERVIEW.md (expanded user areas), config/OVERVIEW.md (added dev commands), docs/OVERVIEW.md (added navigation table), development/prompts/OVERVIEW.md (added phase status table), and ROUTING.md (updated agent extensions). All file paths and cross-references validated against actual codebase. UK English, neutral wording, and technical tone verified throughout. No stale files removed; migration plan and feature prompts retained as historical context.
+BLOCKERS: none
+
+## HANDOFF - Cleanup - 2026-04-02
+STATUS: COMPLETE
+NEXT_AGENT: none
+SUMMARY: Removed two unused files from pw-studio: (1) pw-studio/src/renderer/src/pages/ProjectDetailPage.tsx — defined but never imported or routed (no references in App.tsx or elsewhere), (2) pw-studio/src/server/ai/providers/TestGenerationProvider.ts and entire /ai folder — interface defined but never referenced anywhere in codebase. Codebase now clean with all sources actively used.
 BLOCKERS: none
